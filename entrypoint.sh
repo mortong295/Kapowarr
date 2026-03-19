@@ -5,6 +5,8 @@ PUID=${PUID:-0}
 PGID=${PGID:-0}
 
 DB_DIR="/app/db"
+LOG_DIR="/app/logs"
+TD_DIR="/app/temp_downloads"
 
 if [ "$PUID" = "0" ]
 then
@@ -20,8 +22,8 @@ else
     usermod -o -u "$PUID" -g "$PGID" kapowarr
 
     echo "Ensuring ownership..."
-    chown -R kapowarr:kapowarr "$DB_DIR" || {
-        echo "Failed to update ownership of $DB_DIR to $PUID:$PGID"
+    chown -R kapowarr:kapowarr "$DB_DIR" "$LOG_DIR" "$TD_DIR" || {
+        echo "Failed to update ownership to $PUID:$PGID"
         exit 1
     }
 
