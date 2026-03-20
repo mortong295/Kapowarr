@@ -284,7 +284,10 @@ usingApiKey()
 		e => clearSearch(api_key);
 
 	library_els.task_buttons.update_all.onclick =
-		e => sendAPI('POST', '/system/tasks', api_key, {}, {'cmd': 'update_all'});
+		e => sendAPI('POST', '/system/tasks', api_key, {}, {
+			'cmd': 'update_all',
+			'allow_skipping': false
+		});
 	library_els.task_buttons.search_all.onclick =
 		e => sendAPI('POST', '/system/tasks', api_key, {}, {'cmd': 'search_all'});
 
