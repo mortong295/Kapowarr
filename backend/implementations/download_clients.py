@@ -384,7 +384,11 @@ class BaseDirectDownload(Download):
             and self.__r.raw._fp
             and not isinstance(self.__r.raw._fp, str)
         ):
-            self.__r.raw._fp.fp.raw._sock.shutdown(2) # SHUT_RDWR
+            try:
+                self.__r.raw._fp.fp.raw._sock.shutdown(2)  # SHUT_RDWR
+            except OSError as e:
+                if e.errno != 9:
+                    raise
         return
 
     def as_dict(self) -> Dict[str, Any]:
