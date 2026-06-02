@@ -504,8 +504,8 @@ class DownloadSource(BaseEnum):
     "A direct download link straight from their own servers"
     GETCOMICS_TORRENT = "GetComics (torrent)"
     "A torrent magnet link directly on the webpage"
-    PROWLARR = "Prowlarr"
-    "A release returned by Prowlarr"
+    USENET = "Usenet"
+    "A Usenet/NZB release"
 
 
 class DownloadState(BaseEnum):

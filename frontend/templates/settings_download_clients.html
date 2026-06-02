@@ -98,7 +98,6 @@
 			Also, most often on Wednesday and Thursday, the site is very busy so the downloads speed goes down a lot. Preferring
 			external services in the service preference list is advised in order to avoid this.
 		</p>
-
 		<div id="cred-container">
 			<p id="cred-error" class="error hidden">Failed to add credentials</p>
 			<form id="mega-form" data-source="mega">
@@ -151,10 +150,17 @@
 	{{ window(False, "builtin-window", "Client Information", builtin_content) }}
 
 	{% set choose_content %}
-		<div id="choose-torrent-list"></div>
+		<section class="download-client-choice">
+			<h3>Usenet</h3>
+			<div id="choose-usenet-list"></div>
+		</section>
+		<section class="download-client-choice">
+			<h3>Torrents</h3>
+			<div id="choose-torrent-list"></div>
+		</section>
 	{% endset %}
 
-	{{ window(False, "choose-torrent-window", "Choose Torrent Client", choose_content) }}
+	{{ window(False, "choose-torrent-window", "Choose Download Client", choose_content) }}
 
 	{% set add_content %}
 		<p class="error hidden" id="add-error"></p>
@@ -186,7 +192,7 @@
 		<button id="submit-torrent-add" type="submit" form="add-torrent-form">Add</button>
 	{% endset %}
 
-	{{ window(False, "add-torrent-window", "Add Torrent Client", add_content, add_submit) }}
+	{{ window(False, "add-torrent-window", "Add Download Client", add_content, add_submit) }}
 
 	{% set edit_content %}
 		<p class="error hidden" id="edit-error"></p>
@@ -219,7 +225,7 @@
 		<button id="submit-torrent-edit" type="submit" form="edit-torrent-form">Save</button>
 	{% endset %}
 
-	{{ window(False, "edit-torrent-window", "Edit Torrent Client", edit_content, edit_submit) }}
+	{{ window(False, "edit-torrent-window", "Edit Download Client", edit_content, edit_submit) }}
 
 	{% set add_remote_mapping_content %}
 		<p class="error hidden" id="add-mapping-error"></p>
@@ -294,7 +300,7 @@
 {% block main %}
 <main>
 	<div class="settings-container">
-		<h2>Built-in Clients</h2>
+		<h2>Built-in Direct Clients</h2>
 		<div id="builtin-client-list" class="client-list">
 			<button id="mega-client" data-tag="mega">Mega</button>
 			<button id="mediafire-client" data-tag="mediafire">MediaFire</button>
@@ -302,11 +308,17 @@
 			<button id="pixeldrain-client" data-tag="pixeldrain">Pixeldrain</button>
 			<button id="getcomics-client" data-tag="getcomics">GetComics</button>
 		</div>
-		<h2>Torrent Clients</h2>
+		<h2>Download Clients</h2>
+		<button id="add-torrent-client" class="add-button icon-text-color" title="Add download client">
+			<img src="{{url_base}}/static/img/cancel.svg" alt="">
+		</button>
+		<h3>Usenet</h3>
+		<div id="usenet-client-list" class="client-list">
+			<p class="empty-client-list">No Usenet Clients</p>
+		</div>
+		<h3>Torrents</h3>
 		<div id="torrent-client-list" class="client-list">
-			<button id="add-torrent-client" class="add-button icon-text-color" title="Add torrent client">
-				<img src="{{url_base}}/static/img/cancel.svg" alt="">
-			</button>
+			<p class="empty-client-list">No Torrent Clients</p>
 		</div>
 		<h2>Remote Path Mappings</h2>
 		<button id="add-remote-mapping" class="icon-dark-color" title="Add remote path mapping">

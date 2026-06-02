@@ -302,6 +302,9 @@
 	display: flex;
 	justify-content: center;
 	align-items: center;
+	width: 2.8rem;
+	height: 2.8rem;
+	margin-bottom: 1rem;
 }
 
 .add-button > img {
@@ -377,6 +380,7 @@
 	justify-content: flex-start;
 }
 
+#choose-usenet-list,
 #choose-torrent-list {
 	display: flex;
 	justify-content: center;
@@ -384,6 +388,7 @@
 	flex-wrap: wrap;
 }
 
+#choose-usenet-list > button,
 #choose-torrent-list > button {
 	width: 10rem;
 	height: 4rem;
@@ -396,6 +401,18 @@
 	font-size: 1rem;
 
 	box-shadow: 0 0 9px 0px #00000075;
+}
+
+.download-client-choice h3,
+.settings-container h3 {
+	margin-block: 1rem .6rem;
+	font-size: 1.1rem;
+	font-weight: 500;
+}
+
+.empty-client-list {
+	padding: 1rem;
+	color: var(--dimmed-text-color);
 }
 
 /*  */

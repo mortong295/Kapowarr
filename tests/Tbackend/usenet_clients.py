@@ -1,6 +1,5 @@
 import unittest
 
-from backend.implementations.prowlarr import Prowlarr, score_release
 from backend.implementations.usenet_clients import SABnzbd
 
 
@@ -93,61 +92,3 @@ class sabnzbd_mapping(unittest.TestCase):
         self.assertEqual(mapped['status'], 'importing')
         self.assertEqual(mapped['completed_path'], '/downloads/comics/Batman 001')
         self.assertEqual(mapped['download_time'], 123)
-
-
-class prowlarr_mapping(unittest.TestCase):
-    def test_filters_torrent_result(self):
-        self.assertIsNone(Prowlarr._map_result({
-            'title': 'Batman 001',
-            'downloadUrl': 'https://example.invalid/torrent',
-            'protocol': 'torrent'
-        }))
-
-    def test_maps_usenet_result(self):
-        mapped = Prowlarr._map_result({
-            'title': 'Batman 001 (2016)',
-            'downloadUrl': 'https://example.invalid/getnzb/1',
-            'guid': 'guid-1',
-            'protocol': 'usenet',
-            'indexer': 'Example Indexer',
-            'size': 1234
-        })
-        self.assertIsNotNone(mapped)
-        self.assertEqual(mapped['link'], 'https://example.invalid/getnzb/1')
-        self.assertEqual(mapped['source'], 'Prowlarr')
-        self.assertEqual(mapped['download_type'], 'usenet')
-        self.assertEqual(mapped['indexer'], 'Example Indexer')
-        self.assertEqual(mapped['size'], 1234)
-
-
-class release_scoring(unittest.TestCase):
-    def test_exact_issue_match(self):
-        result = {
-            'display_title': 'Batman 001 (2016) (Digital)',
-            'issue_number': 1.0,
-            'year': 2016,
-            'special_version': None
-        }
-        score, reasons = score_release(result, 'Batman', 1.0, 2016)
-        self.assertGreaterEqual(score, 85)
-        self.assertIn('series title match', reasons)
-        self.assertIn('issue number match', reasons)
-        self.assertIn('year match', reasons)
-
-    def test_and_ampersand_normalisation(self):
-        result = {
-            'display_title': 'Batman and Robin 001 (2011)',
-            'issue_number': 1.0,
-            'year': 2011
-        }
-        score, _ = score_release(result, 'Batman & Robin', 1.0, 2011)
-        self.assertGreaterEqual(score, 85)
-
-    def test_wrong_issue_downscored(self):
-        result = {
-            'display_title': 'Batman 002 (2016)',
-            'issue_number': 2.0,
-            'year': 2016
-        }
-        score, _ = score_release(result, 'Batman', 1.0, 2016)
-        self.assertLess(score, 90)

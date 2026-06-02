@@ -130,16 +130,6 @@ class PublicSettingsValues:
     sabnzbd_timeout_seconds: int = 30
     sabnzbd_completed_download_root: str = ''
 
-    prowlarr_enabled: bool = False
-    prowlarr_base_url: str = ''
-    prowlarr_api_key: str = ''
-    prowlarr_timeout_seconds: int = 30
-    prowlarr_comic_categories: CommaList = field(
-        default_factory=lambda: CommaList('')
-    )
-    prowlarr_minimum_seeders: int = 0
-    prowlarr_prefer_usenet: bool = True
-
     date_type: DateType = DateType.COVER_DATE
 
     def todict(self, to_public: bool = True) -> Dict[str, Any]:
@@ -161,7 +151,7 @@ class PublicSettingsValues:
         for k, v in result.items():
             if k in (
                 "auth_username", "auth_password",
-                "proxy_password", "prowlarr_api_key"
+                "proxy_password"
             ) and v:
                 result[k] = Constants.CREDENTIAL_REPLACEMENT
 
@@ -505,10 +495,7 @@ class Settings(metaclass=Singleton):
         elif key == 'failing_download_timeout' and value < 0:
             raise InvalidKeyValue(key, value)
 
-        elif (
-            key in ('sabnzbd_timeout_seconds', 'prowlarr_timeout_seconds')
-            and value <= 0
-        ):
+        elif key == 'sabnzbd_timeout_seconds' and value <= 0:
             raise InvalidKeyValue(key, value)
 
         elif key == 'sabnzbd_priority':
@@ -517,18 +504,6 @@ class Settings(metaclass=Singleton):
                 'default', 'paused', 'low', 'normal', 'high', 'force'
             ):
                 raise InvalidKeyValue(key, value)
-
-        elif key == 'prowlarr_api_key':
-            if value == Constants.CREDENTIAL_REPLACEMENT:
-                converted_value = self.sv.prowlarr_api_key
-            else:
-                converted_value = value.strip()
-
-        elif key == 'prowlarr_base_url':
-            converted_value = normalise_base_url(value) if value else ''
-
-        elif key == 'prowlarr_minimum_seeders' and value < 0:
-            raise InvalidKeyValue(key, value)
 
         elif key == 'volume_padding' and not 1 <= value <= 3:
             raise InvalidKeyValue(key, value)
