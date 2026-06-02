@@ -10,8 +10,8 @@ from flask import Blueprint, request, send_file
 from backend.base.custom_exceptions import (InvalidKeyValue,
                                             KeyNotFound, TaskNotFound)
 from backend.base.definitions import (BlocklistReason, BlocklistReasonID,
-                                      CredentialData, CredentialSource,
-                                      DownloadSource, FileMatch,
+                                      Constants, CredentialData, CredentialSource,
+                                      DownloadType, DownloadSource, FileMatch,
                                       KapowarrException, LibraryFilter,
                                       LibrarySorting, MonitorScheme,
                                       SpecialVersion, StartType, VolumeData)
@@ -23,7 +23,7 @@ from backend.features.download_queue import (DownloadHandler,
 from backend.features.library_import import (import_library,
                                              propose_library_import)
 from backend.features.mass_edit import run_mass_editor_action
-from backend.features.search import manual_search
+from backend.features.search import manual_search, search_multiple_queries
 from backend.features.tasks import (Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_planning, task_library)
@@ -41,6 +41,7 @@ from backend.implementations.file_matching import (get_file_matching,
                                                    set_file_matching)
 from backend.implementations.naming import (generate_volume_folder_name,
                                             preview_mass_rename)
+from backend.implementations.prowlarr import Prowlarr
 from backend.implementations.remote_mapping import RemoteMappings
 from backend.implementations.root_folders import RootFolders
 from backend.implementations.volumes import Library, delete_issue_file
@@ -1314,8 +1315,64 @@ def api_credential(id: int):
         return return_api({})
 
 
+
+@api.route('/prowlarr/test', methods=['POST'])
+@error_handler
+@auth
+def api_prowlarr_test():
+    data: dict = request.get_json()
+    result = Prowlarr.test(
+        data.get('base_url') or Settings().sv.prowlarr_base_url,
+        data.get('api_key') or Settings().sv.prowlarr_api_key,
+        data.get('timeout_seconds') or Settings().sv.prowlarr_timeout_seconds
+    )
+    return return_api(result)
+
+
+@api.route('/prowlarr/search', methods=['POST'])
+@error_handler
+@auth
+def api_prowlarr_manual_search():
+    data: dict = request.get_json()
+    query = data.get('query')
+    if not isinstance(query, str) or not query:
+        raise InvalidKeyValue('query', query)
+    result = [
+        r for r in run(search_multiple_queries(query))
+        if r.get('source') == DownloadSource.PROWLARR.value
+    ]
+    return return_api(result)
+
+
+@api.route('/downloadclients/queue', methods=['GET'])
+@error_handler
+@auth
+def api_download_clients_queue():
+    result = []
+    for client_data in ExternalClients.get_clients():
+        if client_data['download_type'] != DownloadType.USENET.value:
+            continue
+        client = ExternalClients.get_client(client_data['id'])
+        if hasattr(client, 'get_queue'):
+            result.extend(client.get_queue())
+    return return_api(result)
+
+
+@api.route('/downloadclients/history', methods=['GET'])
+@error_handler
+@auth
+def api_download_clients_history():
+    result = []
+    for client_data in ExternalClients.get_clients():
+        if client_data['download_type'] != DownloadType.USENET.value:
+            continue
+        client = ExternalClients.get_client(client_data['id'])
+        if hasattr(client, 'get_history'):
+            result.extend(client.get_history())
+    return return_api(result)
+
 # =====================
-# Torrent Clients
+# Download Clients
 # =====================
 @api.route('/externalclients', methods=['GET', 'POST'])
 @error_handler
@@ -1323,6 +1380,9 @@ def api_credential(id: int):
 def api_external_clients():
     if request.method == 'GET':
         result = ExternalClients.get_clients()
+        for client_data in result:
+            if client_data.get('api_token'):
+                client_data['api_token'] = Constants.CREDENTIAL_REPLACEMENT
         return return_api(result)
 
     elif request.method == 'POST':
@@ -1336,6 +1396,8 @@ def api_external_clients():
             )
         }
         result = ExternalClients.add(**data).get_client_data()
+        if result.get('api_token'):
+            result['api_token'] = Constants.CREDENTIAL_REPLACEMENT
         return return_api(result, code=201)
 
 
@@ -1374,6 +1436,8 @@ def api_external_client(id: int):
 
     if request.method == 'GET':
         result = client.get_client_data()
+        if result.get('api_token'):
+            result['api_token'] = Constants.CREDENTIAL_REPLACEMENT
         return return_api(result)
 
     elif request.method == 'PUT':
@@ -1386,7 +1450,10 @@ def api_external_client(id: int):
             )
         }
         client.update_client(data)
-        return return_api(client.get_client_data())
+        result = client.get_client_data()
+        if result.get('api_token'):
+            result['api_token'] = Constants.CREDENTIAL_REPLACEMENT
+        return return_api(result)
 
     elif request.method == 'DELETE':
         client.delete_client()

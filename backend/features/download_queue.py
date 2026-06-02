@@ -17,7 +17,7 @@ from backend.base.custom_exceptions import (ClientNotWorking,
                                             InvalidKeyValue, IssueNotFound,
                                             LinkBroken)
 from backend.base.definitions import (BlocklistReason, Constants, Download,
-                                      DownloadSource, DownloadState,
+                                      DownloadSource, DownloadState, DownloadType,
                                       EnqueuingDownloadFailureReason,
                                       ExternalDownload, SeedingHandling)
 from backend.base.files import create_folder, delete_file_folder
@@ -29,7 +29,8 @@ from backend.features.post_processing import (PostProcessor,
 from backend.implementations.blocklist import add_to_blocklist
 from backend.implementations.download_clients import (BaseDirectDownload,
                                                       MegaDownload,
-                                                      TorrentDownload)
+                                                      TorrentDownload,
+                                                      UsenetDownload)
 from backend.implementations.external_clients import ExternalClients
 from backend.implementations.getcomics import GetComicsPage
 from backend.implementations.volumes import Issue
@@ -307,11 +308,11 @@ class DownloadHandler(metaclass=Singleton):
                     name=f'DownloadThread-{download.id}'
                 )
 
-            if isinstance(download, TorrentDownload):
+            if isinstance(download, (TorrentDownload, UsenetDownload)):
                 thread = Server().get_db_thread(
                     target=self.__run_torrent_download,
                     args=(download,),
-                    name=f'TorrentDownloadThread-{download.id}'
+                    name=f'ExternalDownloadThread-{download.id}'
                 )
                 download.download_thread = thread
                 thread.start()
@@ -357,6 +358,8 @@ class DownloadHandler(metaclass=Singleton):
         """
         if link.startswith(Constants.GC_SITE_URL):
             return 'gc'
+        if link.startswith(('http://', 'https://')):
+            return 'usenet'
         return None
 
     def link_in_queue(self, link: str) -> bool:
@@ -427,7 +430,23 @@ class DownloadHandler(metaclass=Singleton):
 
         link_type = self.__determine_link_type(link)
         downloads: List[Download] = []
-        if link_type == 'gc':
+        if link_type == 'usenet':
+            downloads = [UsenetDownload(
+                download_link=link,
+                volume_id=volume_id,
+                covered_issues=None,
+                source_type=DownloadSource.PROWLARR,
+                source_name=DownloadSource.PROWLARR.value,
+                web_link=link,
+                web_title=None,
+                web_sub_title=None,
+                forced_match=force_match,
+                external_client=ExternalClients.get_least_used_client(
+                    DownloadType.USENET
+                )
+            )]
+
+        elif link_type == 'gc':
             gcp = GetComicsPage(link)
 
             try:

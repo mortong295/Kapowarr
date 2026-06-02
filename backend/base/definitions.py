@@ -458,6 +458,7 @@ class DownloadType(BaseEnum):
 
     DIRECT = 1
     TORRENT = 2
+    USENET = 3
 
 
 class GCDownloadSource(BaseEnum):
@@ -471,8 +472,6 @@ class GCDownloadSource(BaseEnum):
     "A direct download link straight from their own servers"
     GETCOMICS_TORRENT = "GetComics (torrent)"
     "A torrent magnet link directly on the webpage"
-
-
 # autopep8: off
 GC_DOWNLOAD_SOURCE_TERMS = {
     GCDownloadSource.MEGA: ("mega", "mega link"),
@@ -505,6 +504,8 @@ class DownloadSource(BaseEnum):
     "A direct download link straight from their own servers"
     GETCOMICS_TORRENT = "GetComics (torrent)"
     "A torrent magnet link directly on the webpage"
+    PROWLARR = "Prowlarr"
+    "A release returned by Prowlarr"
 
 
 class DownloadState(BaseEnum):
