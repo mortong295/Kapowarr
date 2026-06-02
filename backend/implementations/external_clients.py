@@ -8,7 +8,7 @@ from backend.base.custom_exceptions import (ClientNotWorking,
                                             ExternalClientDownloading,
                                             ExternalClientNotFound,
                                             InvalidKeyValue, KeyNotFound)
-from backend.base.definitions import (ClientTestResult, DownloadType,
+from backend.base.definitions import (ClientTestResult, Constants, DownloadType,
                                       ExternalDownloadClient)
 from backend.base.helpers import get_subclasses, normalise_base_url
 from backend.internals.db import get_db
@@ -96,6 +96,9 @@ class BaseExternalClient(ExternalDownloadClient):
             if key == 'base_url':
                 filtered_data[key] = normalise_base_url(data[key])
 
+            elif key == 'api_token' and data[key] == Constants.CREDENTIAL_REPLACEMENT:
+                filtered_data[key] = self._api_token
+
             elif key in self.required_tokens:
                 filtered_data[key] = data[key]
 
@@ -166,6 +169,7 @@ class ExternalClients:
         """
         from backend.implementations.torrent_clients import (Transmission,
                                                              qBittorrent)
+        from backend.implementations.usenet_clients import SABnzbd
         return {
             client.client_type: client
             for client in sorted(
