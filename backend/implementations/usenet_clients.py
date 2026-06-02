@@ -188,9 +188,9 @@ class SABnzbd(BaseExternalClient):
         raise ClientNotWorking(BrokenClientReason.FAILED_PROCESSING_RESPONSE)
 
     @staticmethod
-    def _size_to_int(value: Any) -> int:
+    def _size_to_int(value: Any, default_unit: str = 'B') -> int:
         if isinstance(value, (int, float)):
-            return int(value)
+            return int(value * SABnzbd._unit_multiplier(default_unit))
         if not isinstance(value, str):
             return 0
         parts = value.strip().split()
@@ -198,12 +198,16 @@ class SABnzbd(BaseExternalClient):
             number = float(parts[0])
         except (IndexError, ValueError):
             return 0
-        unit = parts[1].upper() if len(parts) > 1 else 'B'
+        unit = parts[1].upper() if len(parts) > 1 else default_unit
+        return int(number * SABnzbd._unit_multiplier(unit))
+
+    @staticmethod
+    def _unit_multiplier(unit: str) -> int:
         mult = {
             'B': 1, 'KB': 1024, 'MB': 1024**2,
             'GB': 1024**3, 'TB': 1024**4
         }
-        return int(number * mult.get(unit, 1))
+        return mult.get(unit.upper(), 1)
 
     def get_queue(self) -> List[Dict[str, Any]]:
         result = self._request(
@@ -229,10 +233,11 @@ class SABnzbd(BaseExternalClient):
                 DownloadState.DOWNLOADING_STATE
             ).value,
             'category': item.get('cat') or item.get('category') or '',
-            'size': cls._size_to_int(item.get('mb') or item.get('size')),
+            'size': cls._size_to_int(item.get('mb') or item.get('size'), 'MB'),
             'remaining': cls._size_to_int(
                 item.get('mbleft')
-                or item.get('remaining')
+                or item.get('remaining'),
+                'MB'
             ),
             'percentage': percentage,
             'speed': item.get('speed') or '',
@@ -301,6 +306,12 @@ class SABnzbd(BaseExternalClient):
                 }
         for item in self.get_history(download_id):
             local_path = item.get('completed_path') or ''
+            if not local_path and self.settings.sv.sabnzbd_completed_download_root:
+                local_path = (
+                    self.settings.sv.sabnzbd_completed_download_root.rstrip('/')
+                    + '/'
+                    + item.get('name', '')
+                )
             state = DownloadState(item['status'])
             if state == DownloadState.IMPORTING_STATE:
                 state = DownloadState.IMPORTING_STATE
@@ -318,7 +329,18 @@ class SABnzbd(BaseExternalClient):
         return {}
 
     def delete_download(self, download_id: str, delete_files: bool) -> None:
-        mode = 'history' if delete_files else 'queue'
+        mode = 'history'
+        try:
+            if any(
+                item['external_id'] == download_id
+                for item in self.get_queue()
+            ):
+                mode = 'queue'
+        except ClientNotWorking:
+            # Fall back to history deletion for completed downloads if the queue
+            # cannot be inspected; the caller is already handling client errors.
+            mode = 'history'
+
         self._request(
             self.base_url,
             self.api_token,
