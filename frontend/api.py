@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from asyncio import run
 from datetime import datetime
 from io import BytesIO
 from typing import Any, Dict, List, Tuple, Type, Union
@@ -23,7 +22,7 @@ from backend.features.download_queue import (DownloadHandler,
 from backend.features.library_import import (import_library,
                                              propose_library_import)
 from backend.features.mass_edit import run_mass_editor_action
-from backend.features.search import manual_search, search_multiple_queries
+from backend.features.search import manual_search
 from backend.features.tasks import (Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_planning, task_library)
@@ -41,7 +40,6 @@ from backend.implementations.file_matching import (get_file_matching,
                                                    set_file_matching)
 from backend.implementations.naming import (generate_volume_folder_name,
                                             preview_mass_rename)
-from backend.implementations.prowlarr import Prowlarr
 from backend.implementations.remote_mapping import RemoteMappings
 from backend.implementations.root_folders import RootFolders
 from backend.implementations.volumes import Library, delete_issue_file
@@ -1314,36 +1312,6 @@ def api_credential(id: int):
         cred.delete(id)
         return return_api({})
 
-
-
-@api.route('/prowlarr/test', methods=['POST'])
-@error_handler
-@auth
-def api_prowlarr_test():
-    data: dict = request.get_json()
-    result = Prowlarr.test(
-        data.get('base_url') or Settings().sv.prowlarr_base_url,
-        data.get('api_key') or Settings().sv.prowlarr_api_key,
-        data.get('timeout_seconds') or Settings().sv.prowlarr_timeout_seconds
-    )
-    return return_api(result)
-
-
-@api.route('/prowlarr/search', methods=['POST'])
-@error_handler
-@auth
-def api_prowlarr_manual_search():
-    data: dict = request.get_json()
-    query = data.get('query')
-    if not isinstance(query, str) or not query:
-        raise InvalidKeyValue('query', query)
-    result = [
-        r for r in run(search_multiple_queries(query))
-        if r.get('source') == DownloadSource.PROWLARR.value
-    ]
-    return return_api(result)
-
-
 @api.route('/downloadclients/queue', methods=['GET'])
 @error_handler
 @auth
@@ -1417,6 +1385,15 @@ def api_external_clients_keys():
 @auth
 def api_external_clients_test():
     data: dict = request.get_json()
+    client = None
+    client_id = data.get('id')
+    if client_id is not None:
+        try:
+            client_id = int(client_id)
+        except (TypeError, ValueError):
+            raise InvalidKeyValue('id', client_id)
+        client = ExternalClients.get_client(client_id)
+
     data = {
         k: data.get(k)
         for k in (
@@ -1424,6 +1401,13 @@ def api_external_clients_test():
             'username', 'password', 'api_token'
         )
     }
+
+    if client is not None:
+        if data['client_type'] is None:
+            data['client_type'] = client.client_type
+        if data['api_token'] == Constants.CREDENTIAL_REPLACEMENT:
+            data['api_token'] = client.api_token
+
     result = ExternalClients.test(**data)
     return return_api(result)
 

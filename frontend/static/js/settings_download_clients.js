@@ -49,9 +49,151 @@ function createApiTokenInput(id) {
 	return token_row;
 };
 
+function createCheckboxInput(id, label, checked) {
+	const row = document.createElement('tr');
+	row.classList.add('sabnzbd-setting-row');
+
+	const header = document.createElement('th');
+	const label_el = document.createElement('label');
+	label_el.innerText = label;
+	label_el.setAttribute('for', id);
+	header.appendChild(label_el);
+	row.appendChild(header);
+
+	const container = document.createElement('td');
+	const input = document.createElement('input');
+	input.type = 'checkbox';
+	input.id = id;
+	input.checked = checked;
+	container.appendChild(input);
+	row.appendChild(container);
+
+	return row;
+};
+
+function createTextInput(id, label, value, type='text', help='') {
+	const row = document.createElement('tr');
+	row.classList.add('sabnzbd-setting-row');
+
+	const header = document.createElement('th');
+	const label_el = document.createElement('label');
+	label_el.innerText = label;
+	label_el.setAttribute('for', id);
+	header.appendChild(label_el);
+	row.appendChild(header);
+
+	const container = document.createElement('td');
+	const input = document.createElement('input');
+	input.type = type;
+	input.id = id;
+	input.value = value || '';
+	container.appendChild(input);
+
+	if (help) {
+		const description = document.createElement('p');
+		description.innerText = help;
+		container.appendChild(description);
+	};
+
+	row.appendChild(container);
+	return row;
+};
+
+function createPriorityInput(id, value) {
+	const row = document.createElement('tr');
+	row.classList.add('sabnzbd-setting-row');
+
+	const header = document.createElement('th');
+	const label = document.createElement('label');
+	label.innerText = 'Priority';
+	label.setAttribute('for', id);
+	header.appendChild(label);
+	row.appendChild(header);
+
+	const container = document.createElement('td');
+	const select = document.createElement('select');
+	select.id = id;
+	['default', 'paused', 'low', 'normal', 'high', 'force'].forEach(option => {
+		const entry = document.createElement('option');
+		entry.value = option;
+		entry.innerText = option.charAt(0).toUpperCase() + option.slice(1);
+		if (option === value)
+			entry.selected = true;
+		select.appendChild(entry);
+	});
+	container.appendChild(select);
+
+	const description = document.createElement('p');
+	description.innerText = 'Priority assigned to NZBs sent to SABnzbd.';
+	container.appendChild(description);
+
+	row.appendChild(container);
+	return row;
+};
+
+function appendSabnzbdSettings(form, settings) {
+	const prefix = form.id.startsWith('add-') ? 'add' : 'edit';
+	form.appendChild(createCheckboxInput(
+		`${prefix}-sabnzbd-enabled-input`,
+		'Enabled',
+		settings.sabnzbd_enabled ?? true
+	));
+	form.appendChild(createTextInput(
+		`${prefix}-sabnzbd-category-input`,
+		'Category',
+		settings.sabnzbd_category || 'comics',
+		'text',
+		'Category assigned to NZBs sent to SABnzbd.'
+	));
+	form.appendChild(createPriorityInput(
+		`${prefix}-sabnzbd-priority-input`,
+		settings.sabnzbd_priority || 'normal'
+	));
+	form.appendChild(createCheckboxInput(
+		`${prefix}-sabnzbd-ssl-verify-input`,
+		'Verify SSL',
+		settings.sabnzbd_use_ssl_verify ?? true
+	));
+	form.appendChild(createTextInput(
+		`${prefix}-sabnzbd-timeout-input`,
+		'Timeout',
+		settings.sabnzbd_timeout_seconds || 30,
+		'number',
+		'Time in seconds before SABnzbd requests time out.'
+	));
+	form.appendChild(createTextInput(
+		`${prefix}-sabnzbd-completed-root-input`,
+		'Completed Root',
+		settings.sabnzbd_completed_download_root || '',
+		'text',
+		'Optional fallback folder used when SABnzbd history does not include a completed path.'
+	));
+};
+
+function getSabnzbdSettingsFromForm(form) {
+	const prefix = form.id.startsWith('add-') ? 'add' : 'edit';
+	return {
+		sabnzbd_enabled: form.querySelector(`#${prefix}-sabnzbd-enabled-input`).checked,
+		sabnzbd_category: form.querySelector(`#${prefix}-sabnzbd-category-input`).value,
+		sabnzbd_priority: form.querySelector(`#${prefix}-sabnzbd-priority-input`).value,
+		sabnzbd_use_ssl_verify: form.querySelector(`#${prefix}-sabnzbd-ssl-verify-input`).checked,
+		sabnzbd_timeout_seconds: parseInt(form.querySelector(`#${prefix}-sabnzbd-timeout-input`).value || 30),
+		sabnzbd_completed_download_root: form.querySelector(`#${prefix}-sabnzbd-completed-root-input`).value
+	};
+};
+
+function isSabnzbdForm(form) {
+	return form.dataset.type === 'SABnzbd';
+};
+
+function isUsenetClient(client) {
+	return client.client_type === 'SABnzbd' || client.download_type === 3;
+};
+
 function loadEditTorrent(api_key, id) {
 	const form = document.querySelector('#edit-torrent-form tbody');
 	form.dataset.id = id;
+	form.querySelectorAll('.sabnzbd-setting-row').forEach(el => el.remove());
 	form.querySelectorAll(
 		'tr:not(:has(input#edit-title-input, input#edit-baseurl-input))'
 	).forEach(el => el.remove());
@@ -95,7 +237,15 @@ function loadEditTorrent(api_key, id) {
 				form.appendChild(token_input);
 			};
 
-			showWindow('edit-torrent-window');
+			if (client_type === 'SABnzbd') {
+				fetchAPI('/settings', api_key)
+				.then(settings => {
+					appendSabnzbdSettings(form, settings.result);
+					showWindow('edit-torrent-window');
+				});
+			} else {
+				showWindow('edit-torrent-window');
+			};
 		});
 	});
 };
@@ -118,7 +268,18 @@ function saveEditTorrent() {
 			};
 			sendAPI('PUT', `/externalclients/${id}`, api_key, {}, data)
 			.then(response => {
+				if (isSabnzbdForm(form))
+					return sendAPI(
+						'PUT',
+						'/settings',
+						api_key,
+						{},
+						getSabnzbdSettingsFromForm(form)
+					);
+			})
+			.then(response => {
 				loadTorrentClients(api_key);
+				fillRemoteMappings(api_key);
 				closeWindow();
 			})
 			.catch(e => {
@@ -149,6 +310,7 @@ async function testEditTorrent(api_key) {
 	const test_button = document.querySelector('#test-torrent-edit');
 	test_button.classList.remove('show-success', 'show-fail');
 	const data = {
+		id: parseInt(form.dataset.id),
 		client_type: form.dataset.type,
 		base_url: form.querySelector('#edit-baseurl-input').value,
 		username: form.querySelector('#edit-username-input')?.value || null,
@@ -190,8 +352,10 @@ function deleteTorrent(api_key) {
 };
 
 function loadTorrentList(api_key) {
-	const table = document.querySelector('#choose-torrent-list');
-	table.innerHTML = '';
+	const usenet_list = document.querySelector('#choose-usenet-list');
+	const torrent_list = document.querySelector('#choose-torrent-list');
+	usenet_list.innerHTML = '';
+	torrent_list.innerHTML = '';
 
 	fetchAPI('/externalclients/options', api_key)
 	.then(json => {
@@ -199,7 +363,10 @@ function loadTorrentList(api_key) {
 			const entry = document.createElement('button');
 			entry.innerText = c;
 			entry.onclick = e => loadAddTorrent(api_key, c);
-			table.appendChild(entry);
+			if (c === 'SABnzbd')
+				usenet_list.appendChild(entry);
+			else
+				torrent_list.appendChild(entry);
 		});
 		showWindow('choose-torrent-window');
 	});
@@ -208,6 +375,7 @@ function loadTorrentList(api_key) {
 function loadAddTorrent(api_key, client_type) {
 	const form = document.querySelector('#add-torrent-form tbody');
 	form.dataset.type = client_type;
+	form.querySelectorAll('.sabnzbd-setting-row').forEach(el => el.remove());
 	form.querySelectorAll(
 		'tr:not(:has(input#add-title-input, input#add-baseurl-input))'
 	).forEach(el => el.remove());
@@ -217,6 +385,7 @@ function loadAddTorrent(api_key, client_type) {
 	form.querySelectorAll(
 		'#add-title-input, #add-baseurl-input'
 	).forEach(el => el.value = '');
+	form.querySelector('#add-title-input').value = client_type;
 
 	fetchAPI('/externalclients/options', api_key)
 	.then(json => {
@@ -231,7 +400,18 @@ function loadAddTorrent(api_key, client_type) {
 		if (client_options.includes('api_token'))
 			form.appendChild(createApiTokenInput('add-token-input'));
 
-		showWindow('add-torrent-window');
+		if (client_type === 'SABnzbd') {
+			fetchAPI('/settings', api_key)
+			.then(settings => {
+				appendSabnzbdSettings(form, {
+					...settings.result,
+					sabnzbd_enabled: true
+				});
+				showWindow('add-torrent-window');
+			});
+		} else {
+			showWindow('add-torrent-window');
+		};
 	});
 };
 
@@ -253,7 +433,18 @@ function saveAddTorrent() {
 			};
 			sendAPI('POST', '/externalclients', api_key, {}, data)
 			.then(response => {
+				if (isSabnzbdForm(form))
+					return sendAPI(
+						'PUT',
+						'/settings',
+						api_key,
+						{},
+						getSabnzbdSettingsFromForm(form)
+					);
+			})
+			.then(response => {
 				loadTorrentClients(api_key);
+				fillRemoteMappings(api_key);
 				closeWindow();
 			})
 			.catch(e => {
@@ -303,12 +494,13 @@ async function testAddTorrent(api_key) {
 function loadTorrentClients(api_key) {
 	fetchAPI('/externalclients', api_key)
 	.then(json => {
-		const table = document.querySelector('#torrent-client-list'),
+		const usenet_table = document.querySelector('#usenet-client-list'),
+			torrent_table = document.querySelector('#torrent-client-list'),
 			add_mapping_select = document.querySelector('#add-mapping-client-input'),
 			edit_mapping_select = document.querySelector('#edit-mapping-client-input');
 
-		document.querySelectorAll('#torrent-client-list > :not(:first-child)')
-			.forEach(el => el.remove());
+		usenet_table.querySelectorAll('button').forEach(el => el.remove());
+		torrent_table.querySelectorAll('button').forEach(el => el.remove());
 		add_mapping_select.innerHTML = ''
 		edit_mapping_select.innerHTML = ''
 
@@ -316,7 +508,11 @@ function loadTorrentClients(api_key) {
 			const entry = document.createElement('button');
 			entry.onclick = (e) => loadEditTorrent(api_key, client.id);
 			entry.innerText = client.title;
-			table.appendChild(entry);
+
+			if (isUsenetClient(client))
+				usenet_table.appendChild(entry);
+			else
+				torrent_table.appendChild(entry);
 
 			const option = document.createElement('option');
 			option.innerText = client.title;
@@ -324,6 +520,15 @@ function loadTorrentClients(api_key) {
 			add_mapping_select.appendChild(option);
 			edit_mapping_select.appendChild(option.cloneNode(true));
 		});
+
+		document.querySelector('#usenet-client-list .empty-client-list').classList.toggle(
+			'hidden',
+			!!usenet_table.querySelector('button')
+		);
+		document.querySelector('#torrent-client-list .empty-client-list').classList.toggle(
+			'hidden',
+			!!torrent_table.querySelector('button')
+		);
 	});
 };
 

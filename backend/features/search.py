@@ -12,7 +12,6 @@ from backend.base.helpers import (AsyncSession, check_overlapping_issues,
                                   get_subclasses, normalise_query_string)
 from backend.base.logging import LOGGER
 from backend.implementations.getcomics import search_getcomics
-from backend.implementations.prowlarr import Prowlarr, score_release
 from backend.implementations.matching import check_search_result_match
 from backend.implementations.volumes import Volume
 
@@ -141,11 +140,6 @@ class SearchGetComics(SearchSource):
         return await search_getcomics(session, self.query)
 
 
-class SearchProwlarr(SearchSource):
-    async def search(self, session: AsyncSession) -> List[SearchResultData]:
-        return await Prowlarr().search(session, self.query)
-
-
 async def search_multiple_queries(*queries: str) -> List[SearchResultData]:
     """Do a manual search for multiple queries asynchronously.
 
@@ -252,21 +246,9 @@ def manual_search(
                 result, volume_data, volume_issues,
                 number_to_year, calculated_issue_number
             )
-            score, reasons = score_release(
-                result,
-                volume_data.title,
-                calculated_issue_number,
-                volume_data.year,
-                volume_data.publisher,
-                volume_data.special_version.value
-                if volume_data.special_version else None
-            )
             results.append({
                 **result,
-                **match,
-                'score': score,
-                'score_reasons': reasons,
-                'eligible_for_auto_grab': score >= 90
+                **match
             })
 
         # Sort results; put best result at top
