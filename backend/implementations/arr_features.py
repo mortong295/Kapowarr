@@ -563,8 +563,7 @@ def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
             'getcomics', 'newznab', 'torznab', 'rawrss'
         },
         'connections': {
-            'webhook', 'discord', 'apprise', 'gotify', 'plex', 'jellyfin',
-            'kodi'
+            'webhook', 'discord', 'gotify'
         },
         'importlists': {
             'comicvine', 'pulllist', 'mylar', 'csv', 'json'
