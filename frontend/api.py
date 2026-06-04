@@ -1960,10 +1960,10 @@ def _mask_indexer_key(indexer_data: Dict[str, Any]) -> Dict[str, Any]:
     return indexer_data
 
 
-@api.route('/indexers', methods=['GET', 'POST'])
+@api.route('/externalindexers', methods=['GET', 'POST'])
 @error_handler
 @auth
-def api_indexers():
+def api_external_indexers():
     if request.method == 'GET':
         return return_api([
             _mask_indexer_key(indexer_data)
@@ -1983,20 +1983,20 @@ def api_indexers():
         return return_api(_mask_indexer_key(result), code=201)
 
 
-@api.route('/indexers/options', methods=['GET'])
+@api.route('/externalindexers/options', methods=['GET'])
 @error_handler
 @auth
-def api_indexer_options():
+def api_external_indexer_options():
     return return_api({
         k: v.required_tokens
         for k, v in ExternalIndexers.get_indexer_types().items()
     })
 
 
-@api.route('/indexers/test', methods=['POST'])
+@api.route('/externalindexers/test', methods=['POST'])
 @error_handler
 @auth
-def api_indexer_test():
+def api_external_indexer_test():
     data: dict = request.get_json()
     indexer_id = data.get('id')
     if indexer_id is not None:
@@ -2017,10 +2017,10 @@ def api_indexer_test():
     return return_api(ExternalIndexers.test(**data))
 
 
-@api.route('/indexers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@api.route('/externalindexers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
 @error_handler
 @auth
-def api_indexer(id: int):
+def api_external_indexer(id: int):
     indexer = ExternalIndexers.get_indexer(id)
 
     if request.method == 'GET':

@@ -566,7 +566,7 @@ async function testIndexer(prefix, api_key) {
 	if (prefix === 'edit')
 		data.id = parseInt(form.dataset.id);
 
-	return await sendAPI('POST', '/indexers/test', api_key, {}, {
+	return await sendAPI('POST', '/externalindexers/test', api_key, {}, {
 		id: data.id,
 		indexer_type: data.indexer_type,
 		base_url: data.base_url,
@@ -583,7 +583,7 @@ function loadIndexerList(api_key) {
 	const list = document.querySelector('#choose-indexer-list');
 	list.innerHTML = '';
 
-	fetchAPI('/indexers/options', api_key)
+	fetchAPI('/externalindexers/options', api_key)
 	.then(json => {
 		Object.keys(json.result).forEach(indexer_type => {
 			const entry = document.createElement('button');
@@ -617,7 +617,7 @@ function saveAddIndexer() {
 			if (!result)
 				return;
 
-			sendAPI('POST', '/indexers', api_key, {}, indexerFormData('add', true))
+			sendAPI('POST', '/externalindexers', api_key, {}, indexerFormData('add', true))
 			.then(response => {
 				loadIndexers(api_key);
 				closeWindow();
@@ -638,7 +638,7 @@ function loadEditIndexer(api_key, id) {
 		'show-success', 'show-fail'
 	);
 
-	fetchAPI(`/indexers/${id}`, api_key)
+	fetchAPI(`/externalindexers/${id}`, api_key)
 	.then(json => {
 		const result = json.result;
 		const form = document.querySelector('#edit-indexer-form');
@@ -664,7 +664,7 @@ function saveEditIndexer() {
 			const form = document.querySelector('#edit-indexer-form');
 			sendAPI(
 				'PUT',
-				`/indexers/${form.dataset.id}`,
+				`/externalindexers/${form.dataset.id}`,
 				api_key,
 				{},
 				indexerFormData('edit', false)
@@ -685,7 +685,7 @@ function saveEditIndexer() {
 
 function deleteIndexer(api_key) {
 	const id = document.querySelector('#edit-indexer-form').dataset.id;
-	sendAPI('DELETE', `/indexers/${id}`, api_key)
+	sendAPI('DELETE', `/externalindexers/${id}`, api_key)
 	.then(response => {
 		loadIndexers(api_key);
 		closeWindow();
@@ -693,7 +693,7 @@ function deleteIndexer(api_key) {
 };
 
 function loadIndexers(api_key) {
-	fetchAPI('/indexers', api_key)
+	fetchAPI('/externalindexers', api_key)
 	.then(json => {
 		const list = document.querySelector('#indexer-list');
 		list.querySelectorAll('button').forEach(el => el.remove());
