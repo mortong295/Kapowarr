@@ -1184,3 +1184,20 @@ def _migrate_add_forced_file_match_column():
     """)
 
     return
+
+
+@DatabaseMigrationHandler.register_handler(45)
+def _migrate_add_external_indexers():
+    get_db().executescript("""
+        CREATE TABLE IF NOT EXISTS external_indexers(
+            id INTEGER PRIMARY KEY,
+            indexer_type VARCHAR(255) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            base_url TEXT NOT NULL,
+            api_key VARCHAR(255) NOT NULL,
+            enabled BOOL NOT NULL DEFAULT 1,
+            categories TEXT
+        );
+    """)
+
+    return

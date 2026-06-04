@@ -120,7 +120,10 @@ class DownloadHandler(metaclass=Singleton):
         status_event = QueueStatusEvent(download)
         seeding_handling = self.settings.sv.seeding_handling
 
-        if seeding_handling == SeedingHandling.COMPLETE:
+        if isinstance(download, UsenetDownload):
+            post_processer = PostProcessorTorrentsComplete
+
+        elif seeding_handling == SeedingHandling.COMPLETE:
             post_processer = PostProcessorTorrentsComplete
 
         elif seeding_handling == SeedingHandling.COPY:
@@ -431,10 +434,16 @@ class DownloadHandler(metaclass=Singleton):
         link_type = self.__determine_link_type(link)
         downloads: List[Download] = []
         if link_type == 'usenet':
+            covered_issues = (
+                Issue(issue_id, check_existence=True)
+                .get_data()
+                .calculated_issue_number
+                if issue_id else None
+            )
             downloads = [UsenetDownload(
                 download_link=link,
                 volume_id=volume_id,
-                covered_issues=None,
+                covered_issues=covered_issues,
                 source_type=DownloadSource.USENET,
                 source_name=DownloadSource.USENET.value,
                 web_link=link,

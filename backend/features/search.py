@@ -11,6 +11,7 @@ from backend.base.helpers import (AsyncSession, check_overlapping_issues,
                                   extract_year_from_date, force_range,
                                   get_subclasses, normalise_query_string)
 from backend.base.logging import LOGGER
+from backend.implementations.external_indexers import search_external_indexers
 from backend.implementations.getcomics import search_getcomics
 from backend.implementations.matching import check_search_result_match
 from backend.implementations.volumes import Volume
@@ -138,6 +139,11 @@ def _rank_search_result(
 class SearchGetComics(SearchSource):
     async def search(self, session: AsyncSession) -> List[SearchResultData]:
         return await search_getcomics(session, self.query)
+
+
+class SearchExternalIndexers(SearchSource):
+    async def search(self, session: AsyncSession) -> List[SearchResultData]:
+        return await search_external_indexers(session, self.query)
 
 
 async def search_multiple_queries(*queries: str) -> List[SearchResultData]:

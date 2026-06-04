@@ -532,6 +532,188 @@ function loadTorrentClients(api_key) {
 	});
 };
 
+function indexerFormData(prefix, include_type=true) {
+	const form = document.querySelector(`#${prefix}-indexer-form`);
+	const data = {
+		title: form.querySelector(`#${prefix}-indexer-title-input`).value,
+		base_url: form.querySelector(`#${prefix}-indexer-baseurl-input`).value,
+		api_key: form.querySelector(`#${prefix}-indexer-key-input`).value,
+		enabled: form.querySelector(`#${prefix}-indexer-enabled-input`).checked,
+		categories: form.querySelector(`#${prefix}-indexer-categories-input`).value
+	};
+	if (include_type)
+		data.indexer_type = form.dataset.type;
+	return data;
+};
+
+function showIndexerTestResult(prefix, result) {
+	const error = document.querySelector(`#${prefix}-indexer-error`);
+	const test_button = document.querySelector(`#test-indexer-${prefix}`);
+	test_button.classList.remove('show-success', 'show-fail');
+	if (result.success) {
+		test_button.classList.add('show-success');
+		hide([error]);
+	} else {
+		test_button.classList.add('show-fail');
+		error.innerText = result.description;
+		hide([], [error]);
+	};
+};
+
+async function testIndexer(prefix, api_key) {
+	const form = document.querySelector(`#${prefix}-indexer-form`);
+	const data = indexerFormData(prefix, true);
+	if (prefix === 'edit')
+		data.id = parseInt(form.dataset.id);
+
+	return await sendAPI('POST', '/indexers/test', api_key, {}, {
+		id: data.id,
+		indexer_type: data.indexer_type,
+		base_url: data.base_url,
+		api_key: data.api_key
+	})
+	.then(response => response.json())
+	.then(json => {
+		showIndexerTestResult(prefix, json.result);
+		return json.result.success;
+	});
+};
+
+function loadIndexerList(api_key) {
+	const list = document.querySelector('#choose-indexer-list');
+	list.innerHTML = '';
+
+	fetchAPI('/indexers/options', api_key)
+	.then(json => {
+		Object.keys(json.result).forEach(indexer_type => {
+			const entry = document.createElement('button');
+			entry.innerText = indexer_type;
+			entry.onclick = e => loadAddIndexer(api_key, indexer_type);
+			list.appendChild(entry);
+		});
+		showWindow('choose-indexer-window');
+	});
+};
+
+function loadAddIndexer(api_key, indexer_type) {
+	const form = document.querySelector('#add-indexer-form');
+	form.dataset.type = indexer_type;
+	hide([document.querySelector('#add-indexer-error')]);
+	document.querySelector('#test-indexer-add').classList.remove(
+		'show-success', 'show-fail'
+	);
+	form.querySelector('#add-indexer-enabled-input').checked = true;
+	form.querySelector('#add-indexer-title-input').value = indexer_type;
+	form.querySelector('#add-indexer-baseurl-input').value = '';
+	form.querySelector('#add-indexer-key-input').value = '';
+	form.querySelector('#add-indexer-categories-input').value = '';
+	showWindow('add-indexer-window');
+};
+
+function saveAddIndexer() {
+	usingApiKey()
+	.then(api_key => {
+		testIndexer('add', api_key).then(result => {
+			if (!result)
+				return;
+
+			sendAPI('POST', '/indexers', api_key, {}, indexerFormData('add', true))
+			.then(response => {
+				loadIndexers(api_key);
+				closeWindow();
+			})
+			.catch(async e => {
+				const json = await e.json();
+				document.querySelector('#add-indexer-error').innerText =
+					json.result?.reason_text || json.error;
+				hide([], [document.querySelector('#add-indexer-error')]);
+			});
+		});
+	});
+};
+
+function loadEditIndexer(api_key, id) {
+	hide([document.querySelector('#edit-indexer-error')]);
+	document.querySelector('#test-indexer-edit').classList.remove(
+		'show-success', 'show-fail'
+	);
+
+	fetchAPI(`/indexers/${id}`, api_key)
+	.then(json => {
+		const result = json.result;
+		const form = document.querySelector('#edit-indexer-form');
+		form.dataset.id = result.id;
+		form.dataset.type = result.indexer_type;
+		form.querySelector('#edit-indexer-enabled-input').checked = result.enabled;
+		form.querySelector('#edit-indexer-title-input').value = result.title;
+		form.querySelector('#edit-indexer-baseurl-input').value = result.base_url;
+		form.querySelector('#edit-indexer-key-input').value = result.api_key;
+		form.querySelector('#edit-indexer-categories-input').value =
+			result.categories || '';
+		showWindow('edit-indexer-window');
+	});
+};
+
+function saveEditIndexer() {
+	usingApiKey()
+	.then(api_key => {
+		testIndexer('edit', api_key).then(result => {
+			if (!result)
+				return;
+
+			const form = document.querySelector('#edit-indexer-form');
+			sendAPI(
+				'PUT',
+				`/indexers/${form.dataset.id}`,
+				api_key,
+				{},
+				indexerFormData('edit', false)
+			)
+			.then(response => {
+				loadIndexers(api_key);
+				closeWindow();
+			})
+			.catch(async e => {
+				const json = await e.json();
+				document.querySelector('#edit-indexer-error').innerText =
+					json.result?.reason_text || json.error;
+				hide([], [document.querySelector('#edit-indexer-error')]);
+			});
+		});
+	});
+};
+
+function deleteIndexer(api_key) {
+	const id = document.querySelector('#edit-indexer-form').dataset.id;
+	sendAPI('DELETE', `/indexers/${id}`, api_key)
+	.then(response => {
+		loadIndexers(api_key);
+		closeWindow();
+	});
+};
+
+function loadIndexers(api_key) {
+	fetchAPI('/indexers', api_key)
+	.then(json => {
+		const list = document.querySelector('#indexer-list');
+		list.querySelectorAll('button').forEach(el => el.remove());
+
+		json.result.forEach(indexer => {
+			const entry = document.createElement('button');
+			entry.onclick = e => loadEditIndexer(api_key, indexer.id);
+			entry.innerText = indexer.title;
+			if (!indexer.enabled)
+				entry.classList.add('disabled');
+			list.appendChild(entry);
+		});
+
+		document.querySelector('#indexer-list .empty-client-list').classList.toggle(
+			'hidden',
+			!!list.querySelector('button')
+		);
+	});
+};
+
 function fillCredentials(api_key) {
 	fetchAPI('/credentials', api_key)
 	.then(json => {
@@ -706,8 +888,13 @@ async function deleteRemoteMapping(id) {
 usingApiKey()
 .then(api_key => {
 	fillCredentials(api_key);
+	loadIndexers(api_key);
 	loadTorrentClients(api_key);
 	fillRemoteMappings(api_key);
+	document.querySelector('#add-indexer').onclick = e => loadIndexerList(api_key);
+	document.querySelector('#delete-indexer-edit').onclick = e => deleteIndexer(api_key);
+	document.querySelector('#test-indexer-edit').onclick = e => testIndexer('edit', api_key);
+	document.querySelector('#test-indexer-add').onclick = e => testIndexer('add', api_key);
 	document.querySelector('#delete-torrent-edit').onclick = e => deleteTorrent(api_key);
 	document.querySelector('#test-torrent-edit').onclick = e => testEditTorrent(api_key);
 	document.querySelector('#test-torrent-add').onclick = e => testAddTorrent(api_key);
@@ -716,6 +903,8 @@ usingApiKey()
 
 document.querySelector('#edit-torrent-form').action = 'javascript:saveEditTorrent()';
 document.querySelector('#add-torrent-form').action = 'javascript:saveAddTorrent()';
+document.querySelector('#edit-indexer-form').action = 'javascript:saveEditIndexer()';
+document.querySelector('#add-indexer-form').action = 'javascript:saveAddIndexer()';
 document.querySelectorAll('#cred-container > form').forEach(
 	f => f.action = 'javascript:addCredential();'
 );

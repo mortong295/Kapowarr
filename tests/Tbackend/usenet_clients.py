@@ -1,5 +1,11 @@
 import unittest
+from threading import Event
+from types import SimpleNamespace
 
+from backend.base.definitions import DownloadState, SeedingHandling
+from backend.features import download_queue
+from backend.features.download_queue import DownloadHandler
+from backend.implementations.download_clients import UsenetDownload
 from backend.implementations.usenet_clients import SABnzbd
 
 
@@ -92,3 +98,56 @@ class sabnzbd_mapping(unittest.TestCase):
         self.assertEqual(mapped['status'], 'importing')
         self.assertEqual(mapped['completed_path'], '/downloads/comics/Batman 001')
         self.assertEqual(mapped['download_time'], 123)
+
+
+class usenet_processing(unittest.TestCase):
+    def test_uses_complete_postprocessor_when_torrent_copy_is_configured(self):
+        calls = []
+        download = UsenetDownload.__new__(UsenetDownload)
+        download._id = 1
+        download._state = DownloadState.QUEUED_STATE
+        download._external_id = None
+        download._sleep_event = Event()
+
+        def run_download():
+            download._external_id = 'SAB-1'
+
+        def update_status():
+            download._state = DownloadState.IMPORTING_STATE
+
+        download.run = run_download
+        download.update_status = update_status
+        download.remove_from_client = lambda delete_files: None
+
+        handler = DownloadHandler.__new__(DownloadHandler)
+        handler.settings = SimpleNamespace(
+            sv=SimpleNamespace(
+                seeding_handling=SeedingHandling.COPY,
+                delete_completed_downloads=False
+            )
+        )
+        handler.queue = [download]
+
+        original_complete = download_queue.PostProcessorTorrentsComplete.success
+        original_copy = download_queue.PostProcessorTorrentsCopy.success
+        original_websocket = download_queue.WebSocket
+        try:
+            download_queue.PostProcessorTorrentsComplete.success = classmethod(
+                lambda cls, dl: calls.append('complete')
+            )
+            download_queue.PostProcessorTorrentsCopy.success = classmethod(
+                lambda cls, dl: calls.append('copy')
+            )
+            download_queue.WebSocket = lambda: SimpleNamespace(
+                emit=lambda event: None
+            )
+
+            handler._DownloadHandler__run_torrent_download(download)
+
+        finally:
+            download_queue.PostProcessorTorrentsComplete.success = original_complete
+            download_queue.PostProcessorTorrentsCopy.success = original_copy
+            download_queue.WebSocket = original_websocket
+
+        self.assertEqual(calls, ['complete'])
+        self.assertEqual(handler.queue, [])
