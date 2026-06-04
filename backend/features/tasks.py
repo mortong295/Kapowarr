@@ -19,9 +19,15 @@ from backend.base.helpers import Singleton, get_subclasses
 from backend.base.logging import LOGGER
 from backend.features.download_queue import DownloadHandler
 from backend.features.search import auto_search
+from backend.implementations.arr_features import (get_cutoff_unmet_issues,
+                                                  get_providers,
+                                                  get_searchable_pull_list_items,
+                                                  sync_import_list,
+                                                  update_pull_list_item_status,
+                                                  write_volume_metadata)
 from backend.implementations.conversion import mass_convert
 from backend.implementations.naming import mass_rename
-from backend.implementations.volumes import Volume, refresh_and_scan
+from backend.implementations.volumes import Library, Volume, refresh_and_scan
 from backend.internals.db import close_db, get_db
 from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
                                       TaskStatusEvent, WebSocket)
@@ -404,6 +410,67 @@ class MassConvertVolume(Task):
 # =====================
 
 
+class WriteVolumeMetadata(Task):
+    "Write metadata files for a volume"
+
+    stop = False
+    message = ''
+    action = 'write_metadata'
+    display_title = 'Write Metadata'
+    category = ''
+
+    @property
+    def volume_id(self) -> int:
+        return self._volume_id
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self, volume_id: int) -> None:
+        self._volume_id = volume_id
+        return
+
+    def run(self) -> None:
+        volume = Volume(self._volume_id)
+        self.message = f'Writing metadata for {volume.vd.title}'
+        WebSocket().emit(TaskStatusEvent(self.message))
+        write_volume_metadata(self._volume_id)
+        return
+
+
+class WriteAllMetadata(Task):
+    "Write metadata files for every volume in the library"
+
+    stop = False
+    message = ''
+    action = 'write_all_metadata'
+    display_title = 'Write All Metadata'
+    category = ''
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self) -> None:
+        return
+
+    def run(self) -> None:
+        ws = WebSocket()
+        for volume_id in Library.get_volumes():
+            if self.stop:
+                break
+            volume = Volume(volume_id)
+            self.message = f'Writing metadata for {volume.vd.title}'
+            ws.emit(TaskStatusEvent(self.message))
+            write_volume_metadata(volume_id)
+        return
+
+
 class UpdateAll(Task):
     "Trigger a refresh and scan for each volume in the library"
 
@@ -444,6 +511,258 @@ class UpdateAll(Task):
             pass
 
         return
+
+
+class SyncImportLists(Task):
+    "Sync enabled import lists into pull-list items"
+
+    stop = False
+    message = ''
+    action = 'sync_import_lists'
+    display_title = 'Sync Import Lists'
+    category = ''
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self) -> None:
+        return
+
+    def run(self) -> None:
+        providers = [
+            provider
+            for provider in get_providers('importlists')
+            if provider.get('enabled')
+        ]
+        ws = WebSocket()
+        if not providers:
+            self.message = 'No enabled import lists to sync'
+            ws.emit(TaskStatusEvent(self.message))
+            return
+
+        for provider in providers:
+            if self.stop:
+                break
+            self.message = f"Syncing import list {provider['name']}"
+            ws.emit(TaskStatusEvent(self.message))
+            sync_import_list(provider['id'])
+        return
+
+
+class SearchPullList(Task):
+    "Automatically search matched pull-list items"
+
+    stop = False
+    message = ''
+    action = 'search_pull_list'
+    display_title = 'Search Pull List'
+    category = 'download'
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self) -> None:
+        return
+
+    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+        pull_list_items = get_searchable_pull_list_items()
+        ws = WebSocket()
+        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        for item in pull_list_items:
+            if self.stop:
+                break
+            issue_number = (
+                item['issue_number']
+                or item.get('matched_issue_number')
+                or '?'
+            )
+            self.message = (
+                f"Searching pull-list item {item['series']} "
+                f"#{issue_number}"
+            )
+            ws.emit(TaskStatusEvent(self.message))
+            results = auto_search(item['volume_id'], item['issue_id'])
+            if results:
+                update_pull_list_item_status(item['id'], 'queued')
+            downloads.extend(
+                (result['link'], item['volume_id'], item['issue_id'])
+                for result in results
+            )
+        return downloads
+
+
+class SearchWantedCutoffUnmet(Task):
+    "Automatically search downloaded issues below their quality cutoff"
+
+    stop = False
+    message = ''
+    action = 'search_wanted_cutoff_unmet'
+    display_title = 'Search Cutoff Unmet'
+    category = 'download'
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self) -> None:
+        return
+
+    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+        cutoff_unmet = get_cutoff_unmet_issues()
+        ws = WebSocket()
+        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        for issue in cutoff_unmet:
+            if self.stop:
+                break
+            self.message = (
+                f"Searching cutoff unmet {issue['volume_title']} "
+                f"#{issue['issue_number']}"
+            )
+            ws.emit(TaskStatusEvent(self.message))
+            results = auto_search(issue['volume_id'], issue['issue_id'])
+            downloads.extend(
+                (result['link'], issue['volume_id'], issue['issue_id'])
+                for result in results
+            )
+        return downloads
+
+
+class SearchWantedMissing(Task):
+    "Automatically search every missing monitored issue"
+
+    stop = False
+    message = ''
+    action = 'search_wanted_missing'
+    display_title = 'Search Wanted Missing'
+    category = 'download'
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self) -> None:
+        return
+
+    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+        cursor = get_db(force_new=True)
+        missing = cursor.execute(
+            """
+            SELECT
+                i.id AS issue_id,
+                i.volume_id,
+                v.title AS volume_title,
+                i.issue_number
+            FROM issues i
+            INNER JOIN volumes v ON i.volume_id = v.id
+            LEFT JOIN issues_files if ON i.id = if.issue_id
+            WHERE v.monitored = 1
+                AND i.monitored = 1
+                AND if.issue_id IS NULL
+            GROUP BY i.id
+            ORDER BY v.title, i.calculated_issue_number;
+            """
+        ).fetchalldict()
+
+        ws = WebSocket()
+        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        for issue in missing:
+            if self.stop:
+                break
+            self.message = (
+                f"Searching for {issue['volume_title']} "
+                f"#{issue['issue_number']}"
+            )
+            ws.emit(TaskStatusEvent(self.message))
+            results = auto_search(issue['volume_id'], issue['issue_id'])
+            downloads.extend(
+                (result['link'], issue['volume_id'], issue['issue_id'])
+                for result in results
+            )
+        return downloads
+
+
+class SearchStoryArcMissing(Task):
+    "Automatically search matched missing story-arc issues"
+
+    stop = False
+    message = ''
+    action = 'search_story_arc_missing'
+    display_title = 'Search Missing Story Arcs'
+    category = 'download'
+
+    @property
+    def volume_id(self) -> None:
+        return None
+
+    @property
+    def issue_id(self) -> None:
+        return None
+
+    def __init__(self) -> None:
+        return
+
+    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+        cursor = get_db(force_new=True)
+        missing = cursor.execute(
+            """
+            SELECT
+                sai.issue_id,
+                sai.volume_id,
+                sa.title AS arc_title,
+                i.issue_number,
+                v.title AS volume_title
+            FROM story_arc_issues sai
+            INNER JOIN story_arcs sa ON sai.story_arc_id = sa.id
+            INNER JOIN volumes v ON sai.volume_id = v.id
+            INNER JOIN issues i ON sai.issue_id = i.id
+            LEFT JOIN issues_files if ON sai.issue_id = if.issue_id
+            WHERE sa.monitored = 1
+                AND sai.monitored = 1
+                AND if.issue_id IS NULL
+            GROUP BY sai.id
+            ORDER BY sa.title, sai.reading_order;
+            """
+        ).fetchalldict()
+
+        ws = WebSocket()
+        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        seen = set()
+        for issue in missing:
+            if self.stop:
+                break
+            key = (issue['volume_id'], issue['issue_id'])
+            if key in seen:
+                continue
+            seen.add(key)
+            self.message = (
+                f"Searching story arc {issue['arc_title']}: "
+                f"{issue['volume_title']} #{issue['issue_number']}"
+            )
+            ws.emit(TaskStatusEvent(self.message))
+            results = auto_search(issue['volume_id'], issue['issue_id'])
+            downloads.extend(
+                (result['link'], issue['volume_id'], issue['issue_id'])
+                for result in results
+            )
+        return downloads
 
 
 class SearchAll(Task):

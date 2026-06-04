@@ -21,10 +21,26 @@ function saveSettings(api_key) {
 	});
 };
 
+
+function writeAllMetadata(api_key) {
+	const buttonText = document.querySelector('#write-all-metadata-button p');
+	buttonText.innerText = 'Queued';
+	sendAPI('POST', '/system/tasks', api_key, {}, {cmd: 'write_all_metadata'})
+	.then(response => response.json())
+	.then(json => {
+		buttonText.innerText = json.error ? 'Failed' : 'Queued';
+	})
+	.catch(e => {
+		buttonText.innerText = 'Failed';
+		console.log(e);
+	});
+};
+
 // code run on load
 
 usingApiKey()
 .then(api_key => {
 	fillSettings(api_key);
 	document.querySelector('#save-button').onclick = e => saveSettings(api_key);
+	document.querySelector('#write-all-metadata-button').onclick = e => writeAllMetadata(api_key);
 });

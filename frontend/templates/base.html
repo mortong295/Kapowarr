@@ -82,7 +82,33 @@
 						href="{{url_base}}/library-import"
 						class="{% if request.path == '/library-import' %}current-nav{% endif %}"
 					>Library Import</a>
+					<a
+						href="{{url_base}}/pull-list"
+						class="{% if request.path == '/pull-list' %}current-nav{% endif %}"
+					>Pull List</a>
+					<a
+						href="{{url_base}}/story-arcs"
+						class="{% if request.path == '/story-arcs' %}current-nav{% endif %}"
+					>Story Arcs</a>
 				</div>
+				<a
+					href="{{url_base}}/calendar"
+					class="{% if request.path == '/calendar' %}current-nav{% endif %}"
+				>
+					<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" style="font-size: 14px;">
+						<path fill="currentColor" d="M152 24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H64C28.7 64 0 92.7 0 128v48H448V128c0-35.3-28.7-64-64-64H344V24c0-13.3-10.7-24-24-24s-24 10.7-24 24V64H152V24zM448 224H0V464c0 26.5 21.5 48 48 48H400c26.5 0 48-21.5 48-48V224z"></path>
+					</svg>
+					Calendar
+				</a>
+				<a
+					href="{{url_base}}/wanted"
+					class="{% if request.path == '/wanted' %}current-nav{% endif %}"
+				>
+					<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="font-size: 14px;">
+						<path fill="currentColor" d="M256 48a208 208 0 1 1 0 416 208 208 0 1 1 0-416zm0 464A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM256 128c-13.3 0-24 10.7-24 24V272c0 13.3 10.7 24 24 24s24-10.7 24-24V152c0-13.3-10.7-24-24-24zm32 224a32 32 0 1 0 -64 0 32 32 0 1 0 64 0z"></path>
+					</svg>
+					Wanted
+				</a>
 				<a href="{{url_base}}/activity/queue">
 					<svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="font-size: 14px;">
 						<path fill="currentColor" d="M464 256A208 208 0 1 1 48 256a208 208 0 1 1 416 0zM0 256a256 256 0 1 0 512 0A256 256 0 1 0 0 256zM232 120V256c0 8 4 15.5 10.7 20l96 64c11 7.4 25.9 4.4 33.3-6.7s4.4-25.9-6.7-33.3L280 243.2V120c0-13.3-10.7-24-24-24s-24 10.7-24 24z"></path>
@@ -122,6 +148,22 @@
 						href="{{url_base}}/settings/downloadclients"
 						class="{% if request.path == '/settings/downloadclients' %}current-nav{% endif %}"
 					>Download Clients</a>
+					<a
+						href="{{url_base}}/settings/profiles"
+						class="{% if request.path == '/settings/profiles' %}current-nav{% endif %}"
+					>Profiles</a>
+					<a
+						href="{{url_base}}/settings/indexers"
+						class="{% if request.path == '/settings/indexers' %}current-nav{% endif %}"
+					>Indexers</a>
+					<a
+						href="{{url_base}}/settings/connections"
+						class="{% if request.path == '/settings/connections' %}current-nav{% endif %}"
+					>Connections</a>
+					<a
+						href="{{url_base}}/settings/importlists"
+						class="{% if request.path == '/settings/importlists' %}current-nav{% endif %}"
+					>Import Lists</a>
 					<a
 						href="{{url_base}}/settings/metadata"
 						class="{% if request.path == '/settings/metadata' %}current-nav{% endif %}"

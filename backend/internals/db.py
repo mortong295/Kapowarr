@@ -366,6 +366,7 @@ CREATE TABLE IF NOT EXISTS volumes(
     site_url TEXT NOT NULL DEFAULT "",
     monitored BOOL NOT NULL DEFAULT 0,
     monitor_new_issues BOOL NOT NULL DEFAULT 1,
+    quality_profile_id INTEGER NOT NULL DEFAULT 1,
     root_folder INTEGER NOT NULL,
     folder TEXT,
     custom_folder BOOL NOT NULL DEFAULT 0,
@@ -526,6 +527,100 @@ CREATE TABLE IF NOT EXISTS credentials(
     email TEXT,
     password TEXT,
     api_key TEXT
+);
+
+CREATE TABLE IF NOT EXISTS arr_quality_profiles(
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,
+    upgrade_allowed BOOL NOT NULL DEFAULT 1,
+    cutoff VARCHAR(50) NOT NULL DEFAULT '',
+    allowed_formats TEXT NOT NULL DEFAULT '[]',
+    preferred_formats TEXT NOT NULL DEFAULT '[]',
+    custom_formats TEXT NOT NULL DEFAULT '{}',
+    metadata_profile TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS arr_indexers(
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    implementation VARCHAR(100) NOT NULL,
+    enabled BOOL NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 25,
+    settings TEXT NOT NULL DEFAULT '{}',
+    tags TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS arr_connections(
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    implementation VARCHAR(100) NOT NULL,
+    enabled BOOL NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 25,
+    settings TEXT NOT NULL DEFAULT '{}',
+    tags TEXT NOT NULL DEFAULT '[]',
+    events TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS arr_import_lists(
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    implementation VARCHAR(100) NOT NULL,
+    enabled BOOL NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 25,
+    settings TEXT NOT NULL DEFAULT '{}',
+    tags TEXT NOT NULL DEFAULT '[]',
+    last_sync INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pull_list_items(
+    id INTEGER PRIMARY KEY,
+    provider VARCHAR(100) NOT NULL,
+    release_date VARCHAR(10) NOT NULL DEFAULT '',
+    publisher VARCHAR(255) NOT NULL DEFAULT '',
+    series VARCHAR(255) NOT NULL,
+    issue_number VARCHAR(20) NOT NULL DEFAULT '',
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    volume_id INTEGER,
+    issue_id INTEGER,
+    match_confidence INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+
+    FOREIGN KEY (volume_id) REFERENCES volumes(id)
+        ON DELETE SET NULL,
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+        ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS story_arcs(
+    id INTEGER PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    comicvine_id INTEGER,
+    monitored BOOL NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS story_arc_issues(
+    id INTEGER PRIMARY KEY,
+    story_arc_id INTEGER NOT NULL,
+    reading_order INTEGER NOT NULL,
+    volume_id INTEGER,
+    issue_id INTEGER,
+    comicvine_issue_id INTEGER,
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    monitored BOOL NOT NULL DEFAULT 1,
+
+    FOREIGN KEY (story_arc_id) REFERENCES story_arcs(id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (volume_id) REFERENCES volumes(id)
+        ON DELETE SET NULL,
+    FOREIGN KEY (issue_id) REFERENCES issues(id)
+        ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS remote_mappings(
     id INTEGER PRIMARY KEY,

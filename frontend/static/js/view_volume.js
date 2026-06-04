@@ -26,6 +26,7 @@ const ViewEls = {
 		monitor: document.querySelector('#monitored-input'),
 		monitor_new_issues: document.querySelector('#monitor-issues-input'),
 		monitoring_scheme: document.querySelector('#monitoring-scheme-input'),
+		quality_profile: document.querySelector('#quality-profile-input'),
 		root_folder: document.querySelector('#root-folder-input'),
 		volume_folder: document.querySelector('#volumefolder-input'),
 		special_version: document.querySelector('#specialoverride-input')
@@ -38,6 +39,7 @@ const ViewEls = {
 		convert: document.querySelector('#convert-button'),
 		manage: document.querySelector('#manage-button'),
 		files: document.querySelector('#files-button'),
+		metadata: document.querySelector('#metadata-button'),
 		edit: document.querySelector('#edit-button'),
 		delete: document.querySelector('#delete-button')
 	},
@@ -162,6 +164,8 @@ function fillPage(data, api_key) {
 			.innerText += ` (${sv_name})`;
 	};
 
+	ViewEls.vol_edit.quality_profile.dataset.current_id = data.quality_profile_id;
+
 	// Cover
 	ViewEls.vol_data.cover.src = `${url_base}/api/volumes/${data.id}/cover?api_key=${api_key}`;
 
@@ -193,6 +197,9 @@ function fillPage(data, api_key) {
 	const special_version = document.createElement('p');
 	special_version.innerText = data.special_version?.toUpperCase() || 'Normal volume';
 	tags.appendChild(special_version);
+	const quality_profile = document.createElement('p');
+	quality_profile.innerText = data.quality_profile_name || 'No Quality Profile';
+	tags.appendChild(quality_profile);
 	const total_size = document.createElement('p');
 	total_size.innerText = data.total_size > 0 ? convertSize(data.total_size) : '0MB';
 	tags.appendChild(total_size);
@@ -353,6 +360,17 @@ function showManualSearch(api_key, issue_id=null) {
 			const title = entry.querySelector('a');
 			title.href = result.link;
 			title.innerText = result.display_title;
+
+			const quality = entry.querySelector('.quality-column');
+			quality.innerText = `${result.quality_rank || 'Unknown'} (${(result.quality_format || 'unknown').toUpperCase()})`;
+			if (result.quality_profile_issue)
+				quality.title = `${result.quality_profile_name}: ${result.quality_profile_issue}`;
+			else
+				quality.title = result.quality_profile_name || '';
+			if (result.quality_profile_match === false)
+				quality.classList.add('error');
+
+			entry.querySelector('.score-column').innerText = result.quality_score || 0;
 
 			entry.querySelector('.source-column').innerText = result.source;
 
@@ -816,10 +834,13 @@ function showEdit(api_key) {
 	const volume_root_folder = parseInt(ViewEls.vol_data.path.dataset.root_folder),
 	volume_folder = ViewEls.vol_data.path.dataset.volume_folder;
 	
-	fetchAPI('/rootfolder', api_key)
-	.then(json => {
+	Promise.all([
+		fetchAPI('/rootfolder', api_key),
+		fetchAPI('/profiles', api_key)
+	])
+	.then(([root_folders, profiles]) => {
 		ViewEls.vol_edit.root_folder.innerHTML = '';
-		json.result.forEach(root_folder => {
+		root_folders.result.forEach(root_folder => {
 			const entry = document.createElement('option');
 			entry.value = root_folder.id;
 			entry.innerText = root_folder.folder;
@@ -828,6 +849,18 @@ function showEdit(api_key) {
 			};
 			ViewEls.vol_edit.root_folder.appendChild(entry);
 		});
+
+		ViewEls.vol_edit.quality_profile.innerHTML = '';
+		profiles.result.forEach(profile => {
+			const entry = document.createElement('option');
+			entry.value = profile.id;
+			entry.innerText = profile.name;
+			if (profile.id === parseInt(ViewEls.vol_edit.quality_profile.dataset.current_id)) {
+				entry.setAttribute('selected', 'true');
+			};
+			ViewEls.vol_edit.quality_profile.appendChild(entry);
+		});
+
 		showWindow('edit-window');
 	});
 	ViewEls.vol_edit.monitor.value = ViewEls.vol_data.monitor.dataset.monitored;
@@ -841,6 +874,7 @@ function editVolume() {
 	const data = {
 		'monitored': ViewEls.vol_edit.monitor.value === 'true',
 		'monitor_new_issues': ViewEls.vol_edit.monitor_new_issues.value === 'true',
+		'quality_profile_id': parseInt(ViewEls.vol_edit.quality_profile.value),
 		'root_folder': parseInt(ViewEls.vol_edit.root_folder.value),
 		'volume_folder': ViewEls.vol_edit.volume_folder.value
 	};
@@ -980,6 +1014,19 @@ usingApiKey()
 });
 
 ViewEls.tool_bar.files.onclick = e => showWindow('files-window');
+ViewEls.tool_bar.metadata.onclick = e => {
+	ViewEls.tool_bar.metadata.title = 'Queueing metadata write…';
+	sendAPI('POST', '/system/tasks', api_key, {}, {
+		cmd: 'write_metadata',
+		volume_id: volume_id
+	})
+		.then(response => response.json())
+		.then(json => {
+			ViewEls.tool_bar.metadata.title = json.error
+				? 'Failed to queue metadata write'
+				: 'Metadata write queued';
+		});
+};
 ViewEls.tool_bar.delete.onclick = e => showWindow('delete-window');
 
 document.querySelector('#issue-info-selector').onclick = e => showInfoWindow('issue-info');

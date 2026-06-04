@@ -1,6 +1,13 @@
 function fillSettings(api_key) {
-	fetchAPI('/settings', api_key)
-	.then(json => {
+	Promise.all([fetchAPI('/settings', api_key), fetchAPI('/profiles', api_key)])
+	.then(([json, profiles]) => {
+		const profile_select = document.querySelector('#default-quality-profile-input');
+		profiles.result.forEach(profile => {
+			const option = document.createElement('option');
+			option.value = profile.id;
+			option.innerText = profile.name;
+			profile_select.appendChild(option);
+		});
 		document.querySelector('#bind-address-input').value = json.result.host;
 		document.querySelector('#port-input').value = json.result.port;
 		document.querySelector('#url-base-input').value = json.result.url_base;
@@ -16,6 +23,7 @@ function fillSettings(api_key) {
 		document.querySelector('#cv-input').value = json.result.comicvine_api_key;
 		document.querySelector('#flaresolverr-input').value = json.result.flaresolverr_base_url;
 		document.querySelector('#log-level-input').value = json.result.log_level;
+		profile_select.value = json.result.default_quality_profile_id;
 		
 		if (json.result.auth_username && json.result.auth_password) {
 			document.querySelector('#auth-toggle').value = 'username-password';
@@ -52,7 +60,8 @@ function saveSettings(api_key) {
 		'proxy_ignored_addresses': proxyIgnoredAddresses,
 		'comicvine_api_key': document.querySelector('#cv-input').value,
 		'flaresolverr_base_url': document.querySelector('#flaresolverr-input').value,
-		'log_level': parseInt(document.querySelector('#log-level-input').value)
+		'log_level': parseInt(document.querySelector('#log-level-input').value),
+		'default_quality_profile_id': parseInt(document.querySelector('#default-quality-profile-input').value)
 	};
 	
 	const auth_toggle = document.querySelector('#auth-toggle');

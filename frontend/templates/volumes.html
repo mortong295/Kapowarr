@@ -82,6 +82,10 @@
 			) }}
 		</div>
 		<div class="tool-bar">
+
+			<select id="profile-filter-button" aria-label="Filter by quality profile">
+				<option value="">All Profiles</option>
+			</select>
 			<select id="filter-button" aria-label="Apply a filter">
 				<option value="">No Filter</option>
 				<option value="wanted">Wanted</option>
@@ -128,6 +132,12 @@
 							<option value="true">Delete Volume Folder</option>
 							<option value="false" selected>Keep Volume Folder</option>
 						</select>
+					</div>
+
+					<div class="option-container">
+						<button data-action="quality_profile">Set Quality Profile</button>
+						<select name="quality_profile_id" id="quality-profile-input" aria-label="Set the quality profile for the selected volumes">
+                        </select>
 					</div>
 					<div class="option-container">
 						<button data-action="root_folder">Set Root Folder</button>

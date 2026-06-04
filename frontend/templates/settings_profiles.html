@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Profiles Settings{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/arr_skeleton.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/settings_skeleton.js') }}" defer></script>
+{% endblock %}
+{% block main %}
+<main data-feature="profiles">
+	<section class="tool-bar-container" aria-label="Tool bar">
+		<div class="tool-bar"></div>
+	</section>
+	<div class="arr-page">
+		<header class="arr-header">
+			<div>
+				<h1>Profiles</h1>
+				<p>Profiles will bring Radarr/Sonarr-style quality, custom-format, cutoff, and metadata decisions to comic releases.</p>
+			</div>
+			<span class="arr-badge">Editable settings</span>
+		</header>
+
+		<section id="settings-editor" class="arr-panel">
+			<div class="arr-panel-header">
+				<h2 id="settings-editor-title">Add Provider</h2>
+				<p id="settings-feedback" class="arr-feedback hidden"></p>
+			</div>
+			<form id="settings-editor-form" class="arr-form">
+				<div id="profile-fields" class="arr-form-grid hidden">
+					<label>
+						<span>Name</span>
+						<input id="profile-name-input" type="text" required>
+					</label>
+					<label>
+						<span>Cutoff</span>
+						<input id="profile-cutoff-input" type="text">
+					</label>
+					<label>
+						<span>Allowed Formats</span>
+						<input id="profile-allowed-input" type="text" placeholder="cbz,cbr,pdf">
+					</label>
+					<label>
+						<span>Preferred Formats</span>
+						<input id="profile-preferred-input" type="text" placeholder="cbz,cbr">
+					</label>
+					<label>
+						<span>Custom Formats JSON</span>
+						<textarea id="profile-custom-formats-input"></textarea>
+					</label>
+					<label>
+						<span>Metadata Profile JSON</span>
+						<textarea id="profile-metadata-input"></textarea>
+					</label>
+					<label class="arr-checkbox">
+						<input id="profile-upgrade-input" type="checkbox" checked>
+						<span>Allow upgrades</span>
+					</label>
+				</div>
+				<div id="provider-fields" class="arr-form-grid hidden">
+					<label>
+						<span>Name</span>
+						<input id="provider-name-input" type="text" required>
+					</label>
+					<label>
+						<span>Implementation</span>
+						<select id="provider-implementation-input" required></select>
+					</label>
+					<label>
+						<span>Priority</span>
+						<input id="provider-priority-input" type="number" value="25">
+					</label>
+					<label>
+						<span>Tags</span>
+						<input id="provider-tags-input" type="text" placeholder="tag1,tag2">
+					</label>
+					<label>
+						<span>Events</span>
+						<input id="provider-events-input" type="text" placeholder="download_imported,download_failed">
+					</label>
+					<label>
+						<span>Settings JSON</span>
+						<textarea id="provider-settings-input"></textarea>
+					</label>
+					<label class="arr-checkbox">
+						<input id="provider-enabled-input" type="checkbox" checked>
+						<span>Enabled</span>
+					</label>
+				</div>
+				<div class="arr-form-actions">
+					<button type="submit">Save</button>
+					<button id="settings-test-button" type="button">Test</button>
+					<button id="settings-cancel-button" type="button">Cancel</button>
+				</div>
+			</form>
+		</section>
+		<section id="feature-cards" class="arr-grid arr-section-gap" aria-live="polite"></section>
+	</div>
+</main>
+{% endblock main %}

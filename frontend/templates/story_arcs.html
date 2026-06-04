@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Story Arcs{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/arr_skeleton.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/story_arcs.js') }}" defer></script>
+{% endblock %}
+{% block main %}
+<main>
+	<section class="tool-bar-container" aria-label="Tool bar">
+		<div class="tool-bar"></div>
+	</section>
+	<div class="arr-page">
+		<header class="arr-header">
+			<div>
+				<h1>Story Arcs</h1>
+				<p>Manage comic story arcs by reading order and surface missing arc issues in Wanted.</p>
+			</div>
+			<span class="arr-badge">Mylar parity foundation</span>
+		</header>
+
+		<section class="arr-panel arr-section-gap">
+			<div class="arr-panel-header">
+				<h2>Add Story Arc</h2>
+				<p>Enter issues as one per line: Series, Issue Number, Optional Title.</p>
+			</div>
+			<form id="story-arc-form" class="arr-form">
+				<label>
+					<span>Title</span>
+					<input id="story-arc-title" type="text" required>
+				</label>
+				<label>
+					<span>Description</span>
+					<textarea id="story-arc-description"></textarea>
+				</label>
+				<label>
+					<span>Issues</span>
+					<textarea id="story-arc-issues" placeholder="Batman, 1, Court of Owls"></textarea>
+				</label>
+				<label class="arr-checkbox">
+					<input id="story-arc-monitored" type="checkbox" checked>
+					<span>Monitor this story arc</span>
+				</label>
+				<button type="submit">Add Story Arc</button>
+			</form>
+		</section>
+
+		<section id="story-arc-cards" class="arr-grid arr-section-gap" aria-live="polite"></section>
+		<p id="story-arcs-empty" class="arr-empty-state hidden">No story arcs have been added yet.</p>
+	</div>
+</main>
+{% endblock main %}

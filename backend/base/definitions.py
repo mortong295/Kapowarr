@@ -603,6 +603,13 @@ class MatchedSearchResultData(
     total=False
 ):
     _issue_number: Union[float, Tuple[float, float]]
+    quality_profile_match: bool
+    quality_profile_issue: Union[str, None]
+    quality_profile_id: int
+    quality_profile_name: str
+    quality_format: str
+    quality_score: int
+    quality_rank: str
 
 
 class IssueMetadata(TypedDict):
@@ -765,6 +772,7 @@ class VolumeData:
     publisher: Union[str, None]
     monitored: bool
     monitor_new_issues: bool
+    quality_profile_id: int
     root_folder: int
     folder: str
     custom_folder: bool

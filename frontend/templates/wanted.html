@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Wanted{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/arr_skeleton.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/wanted.js') }}" defer></script>
+{% endblock %}
+{% block main %}
+<main>
+	<section class="tool-bar-container" aria-label="Tool bar">
+		<div class="tool-bar">
+			<select id="wanted-profile-filter" title="Quality Profile">
+				<option value="">All Profiles</option>
+			</select>
+			<button id="search-wanted-button" type="button">Search Missing</button>
+			<button id="search-cutoff-button" type="button">Search Cutoff Unmet</button>
+			<button id="search-story-arcs-button" type="button">Search Story Arcs</button>
+		</div>
+	</section>
+	<div class="arr-page">
+		<header class="arr-header">
+			<div>
+				<h1>Wanted</h1>
+				<p>Missing monitored issues across monitored volumes. Profile-aware scoring now drives search ranking; cutoff-unmet and upgrade-needed views will build on it next.</p>
+			</div>
+			<span class="arr-badge">V1 UX skeleton</span>
+		</header>
+		<section class="arr-panel">
+			<div class="arr-panel-header">
+				<h2>Missing Issues</h2>
+				<p id="wanted-summary">Loading missing issues…</p>
+			</div>
+			<table class="arr-table">
+				<thead>
+					<tr>
+						<th>Volume</th>
+						<th>Issue</th>
+						<th>Release Date</th>
+						<th>Publisher</th>
+						<th>Profile</th>
+					</tr>
+				</thead>
+				<tbody id="wanted-items"></tbody>
+			</table>
+			<p id="wanted-empty" class="arr-empty-state hidden">No missing monitored issues were found.</p>
+		</section>
+
+		<section class="arr-panel arr-section-gap">
+			<div class="arr-panel-header">
+				<h2>Cutoff Unmet</h2>
+				<p id="wanted-cutoff-summary">Loading cutoff-unmet issues…</p>
+			</div>
+			<table class="arr-table">
+				<thead>
+					<tr>
+						<th>Volume</th>
+						<th>Issue</th>
+						<th>Current</th>
+						<th>Cutoff</th>
+						<th>Profile</th>
+					</tr>
+				</thead>
+				<tbody id="wanted-cutoff-items"></tbody>
+			</table>
+			<p id="wanted-cutoff-empty" class="arr-empty-state hidden">No downloaded issues are below their quality cutoff.</p>
+		</section>
+
+		<section class="arr-panel arr-section-gap">
+			<div class="arr-panel-header">
+				<h2>Missing Story Arc Issues</h2>
+				<p id="wanted-arc-summary">Loading story arc gaps…</p>
+			</div>
+			<table class="arr-table">
+				<thead>
+					<tr>
+						<th>Story Arc</th>
+						<th>Order</th>
+						<th>Issue</th>
+						<th>Volume</th>
+					</tr>
+				</thead>
+				<tbody id="wanted-arc-items"></tbody>
+			</table>
+			<p id="wanted-arc-empty" class="arr-empty-state hidden">No missing monitored story arc issues were found.</p>
+		</section>
+	</div>
+</main>
+{% endblock main %}

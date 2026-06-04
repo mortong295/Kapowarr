@@ -79,6 +79,42 @@ def add_to_history(download: Download) -> None:
     return
 
 
+def _download_connection_payload(download: Download) -> Dict[str, object]:
+    return {
+        'download_id': download.id,
+        'volume_id': download.volume_id,
+        'issue_id': download.issue_id,
+        'source': download.source_type.value,
+        'source_name': download.source_name,
+        'web_title': download.web_title,
+        'web_sub_title': download.web_sub_title,
+        'web_link': download.web_link,
+        'file_title': download.title
+    }
+
+
+def notify_download_imported(download: Download) -> None:
+    from backend.implementations.arr_features import send_connection_event
+
+    send_connection_event('download_imported', {
+        **_download_connection_payload(download),
+        'title': 'Download imported',
+        'message': f'Imported {download.title or download.web_title}'
+    })
+    return
+
+
+def notify_download_failed(download: Download) -> None:
+    from backend.implementations.arr_features import send_connection_event
+
+    send_connection_event('download_failed', {
+        **_download_connection_payload(download),
+        'title': 'Download failed',
+        'message': f'Failed to download {download.title or download.web_title}'
+    })
+    return
+
+
 def add_file_to_database(download: Download) -> None:
     "Register files in database and match to a volume/issue"
     scan_files(
@@ -291,7 +327,8 @@ class PostProcessor:
         rename_with_proper_extension,
         add_file_to_database,
         convert_file,
-        set_file_properties
+        set_file_properties,
+        notify_download_imported
     ]
 
     actions_seeding = []
@@ -308,12 +345,14 @@ class PostProcessor:
     actions_failed = [
         remove_from_queue,
         add_to_history,
+        notify_download_failed,
         delete_file
     ]
 
     actions_perm_failed = [
         remove_from_queue,
         add_to_history,
+        notify_download_failed,
         add_dl_to_blocklist,
         delete_file
     ]
@@ -369,7 +408,8 @@ class PostProcessorTorrentsComplete(PostProcessor):
         add_to_history,
         move_torrent_to_dest,
         convert_file,
-        set_file_properties
+        set_file_properties,
+        notify_download_imported
     ]
 
 
@@ -384,5 +424,6 @@ class PostProcessorTorrentsCopy(PostProcessor):
         copy_file_torrent,
         convert_file,
         set_file_properties,
+        notify_download_imported,
         reset_file_link
     ]

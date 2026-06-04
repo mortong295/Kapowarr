@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import run
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Any, Dict, List, Tuple, Type, Union
 
@@ -27,6 +27,30 @@ from backend.features.search import manual_search
 from backend.features.tasks import (Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_planning, task_library)
+from backend.implementations.arr_features import (comicinfo_xml,
+                                                  delete_profile,
+                                                  delete_provider,
+                                                  delete_pull_list_item,
+                                                  delete_story_arc,
+                                                  get_cutoff_unmet_issues,
+                                                  get_default_profile_id,
+                                                  get_profile, get_profiles,
+                                                  get_provider,
+                                                  get_providers,
+                                                  get_pull_list,
+                                                  get_story_arc,
+                                                  get_story_arc_missing,
+                                                  get_story_arcs,
+                                                  save_profile,
+                                                  save_provider,
+                                                  save_pull_list_item,
+                                                  save_story_arc,
+                                                  series_json,
+                                                  sync_import_list,
+                                                  test_provider,
+                                                  write_comicinfo_xml,
+                                                  write_series_json,
+                                                  write_volume_metadata)
 from backend.implementations.blocklist import (add_to_blocklist,
                                                delete_blocklist,
                                                delete_blocklist_entry,
@@ -45,6 +69,7 @@ from backend.implementations.naming import (generate_volume_folder_name,
 from backend.implementations.remote_mapping import RemoteMappings
 from backend.implementations.root_folders import RootFolders
 from backend.implementations.volumes import Library, delete_issue_file
+from backend.internals.db import get_db
 from backend.internals.db_models import FilesDB
 from backend.internals.server import Server, StartTypeHandlers
 from backend.internals.settings import Settings, get_about_data
@@ -129,7 +154,7 @@ def extract_key(request, key: str, check_existence: bool = True) -> Any:
                 raise InvalidKeyValue(key, value)
 
         elif key in (
-            'root_folder_id', 'root_folder',
+            'root_folder_id', 'root_folder', 'quality_profile_id',
             'offset', 'limit', 'index'
         ):
             try:
@@ -321,7 +346,7 @@ def api_tasks():
 
         kwargs = {}
         if task.action in (
-            'refresh_and_scan',
+            'refresh_and_scan', 'write_metadata',
             'auto_search', 'auto_search_issue',
             'mass_rename', 'mass_rename_issue',
             'mass_convert', 'mass_convert_issue'
@@ -661,6 +686,469 @@ def api_remote_mapping(id: int):
 
 
 # =====================
+# Arr-style UX foundation
+# =====================
+
+def _arr_feature_cards(feature: str) -> List[Dict[str, Any]]:
+    feature_cards: Dict[str, List[Dict[str, Any]]] = {
+        "profiles": [
+            {
+                "name": "Quality Profiles",
+                "status": "planned",
+                "description": (
+                    "Define allowed comic formats, upgrade rules, "
+                    "and cutoffs before automatic grabbing is enabled."
+                )
+            },
+            {
+                "name": "Custom Formats",
+                "status": "planned",
+                "description": (
+                    "Score digital releases, scans, archive types, "
+                    "languages, trusted groups, and metadata quality."
+                )
+            },
+            {
+                "name": "Metadata Profiles",
+                "status": "planned",
+                "description": (
+                    "Control ComicInfo.xml, series.json, and archive "
+                    "tagging behavior per volume or tag."
+                )
+            }
+        ],
+        "indexers": [
+            {
+                "name": "GetComics",
+                "status": "available",
+                "description": (
+                    "Current Kapowarr search source for direct links, "
+                    "mirrors, and GetComics torrent links."
+                )
+            },
+            {
+                "name": "Newznab/Torznab",
+                "status": "planned",
+                "description": (
+                    "Add standard *arr-compatible indexers with "
+                    "capabilities, priority, tags, and RSS sync."
+                )
+            },
+            {
+                "name": "Raw RSS",
+                "status": "planned",
+                "description": (
+                    "Support custom comic feeds with parser rules and "
+                    "release-decision scoring."
+                )
+            }
+        ],
+        "connections": [
+            {
+                "name": "Webhook",
+                "status": "planned",
+                "description": (
+                    "Notify other tools when comics are grabbed, "
+                    "imported, failed, or updated."
+                )
+            },
+            {
+                "name": "Discord/Apprise/Gotify",
+                "status": "planned",
+                "description": "Send user-facing grab/import/failure notifications."
+            },
+            {
+                "name": "Plex/Jellyfin/Kodi",
+                "status": "planned",
+                "description": (
+                    "Refresh library applications after Kapowarr "
+                    "imports or retags files."
+                )
+            }
+        ],
+        "importlists": [
+            {
+                "name": "ComicVine Lists",
+                "status": "planned",
+                "description": (
+                    "Auto-add volumes from publishers, characters, "
+                    "teams, story arcs, and curated lists."
+                )
+            },
+            {
+                "name": "Pull Lists",
+                "status": "planned",
+                "description": (
+                    "Surface weekly releases and let monitored volumes "
+                    "grab matching upcoming issues."
+                )
+            },
+            {
+                "name": "Mylar Migration",
+                "status": "planned",
+                "description": (
+                    "Import existing Mylar watchlists and apply "
+                    "Kapowarr root folders, profiles, and tags."
+                )
+            }
+        ]
+    }
+    return feature_cards[feature]
+
+
+def _missing_issues(
+    limit: int = 200,
+    quality_profile_id: Union[int, None] = None
+) -> List[Dict[str, Any]]:
+    profile_filter = ''
+    params: List[Any] = []
+    if quality_profile_id is not None:
+        profile_filter = 'AND v.quality_profile_id = ?'
+        params.append(quality_profile_id)
+
+    params.append(limit)
+    return get_db().execute(f"""
+        SELECT
+            i.id AS issue_id,
+            i.issue_number,
+            i.title AS issue_title,
+            i.date,
+            i.monitored AS issue_monitored,
+            v.id AS volume_id,
+            v.title AS volume_title,
+            v.year,
+            v.publisher,
+            v.volume_number,
+            v.monitored AS volume_monitored,
+            v.quality_profile_id,
+            aqp.name AS quality_profile_name
+        FROM issues i
+        INNER JOIN volumes v
+            ON i.volume_id = v.id
+        LEFT JOIN arr_quality_profiles aqp
+            ON v.quality_profile_id = aqp.id
+        LEFT JOIN issues_files if
+            ON i.id = if.issue_id
+        WHERE
+            v.monitored = 1
+            AND i.monitored = 1
+            AND if.issue_id IS NULL
+            {profile_filter}
+        GROUP BY i.id
+        ORDER BY
+            CASE WHEN i.date IS NULL OR i.date = '' THEN 1 ELSE 0 END,
+            i.date,
+            v.title,
+            i.calculated_issue_number
+        LIMIT ?;
+        """,
+        tuple(params)
+    ).fetchalldict()
+
+
+def _calendar_issues(days: int = 90, limit: int = 200) -> List[Dict[str, Any]]:
+    start = datetime.utcnow().date().isoformat()
+    end = (datetime.utcnow().date() + timedelta(days=days)).isoformat()
+    return get_db().execute("""
+        SELECT
+            i.id AS issue_id,
+            i.issue_number,
+            i.title AS issue_title,
+            i.date,
+            i.monitored AS issue_monitored,
+            COUNT(if.file_id) > 0 AS downloaded,
+            v.id AS volume_id,
+            v.title AS volume_title,
+            v.year,
+            v.publisher,
+            v.volume_number,
+            v.monitored AS volume_monitored
+        FROM issues i
+        INNER JOIN volumes v
+            ON i.volume_id = v.id
+        LEFT JOIN issues_files if
+            ON i.id = if.issue_id
+        WHERE
+            i.date >= ?
+            AND i.date <= ?
+        GROUP BY i.id
+        ORDER BY i.date, v.title, i.calculated_issue_number
+        LIMIT ?;
+        """,
+        (start, end, limit)
+    ).fetchalldict()
+
+
+@api.route('/calendar', methods=['GET'])
+@error_handler
+@auth
+def api_calendar():
+    try:
+        days = int(request.values.get('days', 90))
+    except (TypeError, ValueError):
+        raise InvalidKeyValue('days', request.values.get('days'))
+
+    if days < 1 or days > 366:
+        raise InvalidKeyValue('days', days)
+
+    return return_api({
+        'items': _calendar_issues(days),
+        'pull_list_items': get_pull_list(),
+        'pull_list': {
+            'status': 'planned',
+            'description': (
+                'Weekly comic pull-list providers will populate this '
+                'calendar in a later milestone.'
+            )
+        }
+    })
+
+
+@api.route('/wanted/missing', methods=['GET'])
+@error_handler
+@auth
+def api_wanted_missing():
+    quality_profile_id = extract_key(
+        request,
+        'quality_profile_id',
+        False
+    )
+    return return_api({
+        'items': _missing_issues(
+            quality_profile_id=quality_profile_id
+        ),
+        'cutoff_unmet': {
+            'items': get_cutoff_unmet_issues(
+                quality_profile_id=quality_profile_id
+            )
+        }
+    })
+
+
+@api.route('/wanted/cutoff-unmet', methods=['GET'])
+@error_handler
+@auth
+def api_wanted_cutoff_unmet():
+    quality_profile_id = extract_key(
+        request,
+        'quality_profile_id',
+        False
+    )
+    return return_api({
+        'items': get_cutoff_unmet_issues(
+            quality_profile_id=quality_profile_id
+        )
+    })
+
+
+@api.route('/profiles', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_profiles():
+    if request.method == 'GET':
+        return return_api(get_profiles())
+
+    elif request.method == 'POST':
+        return return_api(save_profile(request.get_json()), code=201)
+
+
+@api.route('/profiles/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@error_handler
+@auth
+def api_profile(id: int):
+    if request.method == 'GET':
+        return return_api(get_profile(id))
+
+    elif request.method == 'PUT':
+        return return_api(save_profile(request.get_json(), id))
+
+    elif request.method == 'DELETE':
+        delete_profile(id)
+        return return_api({})
+
+
+def _provider_endpoint(feature: str):
+    if request.method == 'GET':
+        return return_api(get_providers(feature))
+
+    elif request.method == 'POST':
+        return return_api(
+            save_provider(feature, request.get_json()),
+            code=201
+        )
+
+
+def _provider_item_endpoint(feature: str, id: int):
+    if request.method == 'GET':
+        return return_api(get_provider(feature, id))
+
+    elif request.method == 'PUT':
+        return return_api(save_provider(feature, request.get_json(), id))
+
+    elif request.method == 'DELETE':
+        delete_provider(feature, id)
+        return return_api({})
+
+
+@api.route('/indexers', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_indexers():
+    return _provider_endpoint('indexers')
+
+
+@api.route('/indexers/test', methods=['POST'])
+@error_handler
+@auth
+def api_indexer_test():
+    return return_api(test_provider('indexers', request.get_json() or {}))
+
+
+@api.route('/indexers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@error_handler
+@auth
+def api_indexer(id: int):
+    return _provider_item_endpoint('indexers', id)
+
+
+@api.route('/connections', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_connections():
+    return _provider_endpoint('connections')
+
+
+@api.route('/connections/test', methods=['POST'])
+@error_handler
+@auth
+def api_connection_test():
+    return return_api(test_provider('connections', request.get_json() or {}))
+
+
+@api.route('/connections/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@error_handler
+@auth
+def api_connection(id: int):
+    return _provider_item_endpoint('connections', id)
+
+
+@api.route('/importlists', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_import_lists():
+    return _provider_endpoint('importlists')
+
+
+@api.route('/importlists/test', methods=['POST'])
+@error_handler
+@auth
+def api_import_list_test():
+    return return_api(test_provider('importlists', request.get_json() or {}))
+
+
+@api.route('/importlists/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@error_handler
+@auth
+def api_import_list(id: int):
+    return _provider_item_endpoint('importlists', id)
+
+
+@api.route('/importlists/<int:id>/sync', methods=['POST'])
+@error_handler
+@auth
+def api_import_list_sync(id: int):
+    return return_api(sync_import_list(id))
+
+
+@api.route('/pulllist', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_pull_list():
+    if request.method == 'GET':
+        return return_api(get_pull_list())
+
+    elif request.method == 'POST':
+        return return_api(save_pull_list_item(request.get_json()), code=201)
+
+
+@api.route('/pulllist/<int:id>', methods=['DELETE'])
+@error_handler
+@auth
+def api_pull_list_item(id: int):
+    delete_pull_list_item(id)
+    return return_api({})
+
+
+@api.route('/storyarcs', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_story_arcs():
+    if request.method == 'GET':
+        return return_api(get_story_arcs())
+
+    elif request.method == 'POST':
+        return return_api(save_story_arc(request.get_json()), code=201)
+
+
+@api.route('/storyarcs/missing', methods=['GET'])
+@error_handler
+@auth
+def api_story_arcs_missing():
+    return return_api(get_story_arc_missing())
+
+
+@api.route('/storyarcs/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@error_handler
+@auth
+def api_story_arc(id: int):
+    if request.method == 'GET':
+        return return_api(get_story_arc(id))
+
+    elif request.method == 'PUT':
+        return return_api(save_story_arc(request.get_json(), id))
+
+    elif request.method == 'DELETE':
+        delete_story_arc(id)
+        return return_api({})
+
+
+@api.route('/volumes/<int:id>/metadata', methods=['POST'])
+@error_handler
+@auth
+def api_volume_metadata(id: int):
+    return return_api(write_volume_metadata(id), code=201)
+
+
+@api.route('/volumes/<int:id>/metadata/comicinfo', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_volume_comicinfo(id: int):
+    issue_id = request.values.get('issue_id')
+    if issue_id is not None:
+        try:
+            issue_id = int(issue_id)
+        except (TypeError, ValueError):
+            raise InvalidKeyValue('issue_id', issue_id)
+
+    if request.method == 'GET':
+        return return_api({'comicinfo': comicinfo_xml(id, issue_id)})
+
+    elif request.method == 'POST':
+        return return_api(write_comicinfo_xml(id, issue_id), code=201)
+
+
+@api.route('/volumes/<int:id>/metadata/seriesjson', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_volume_seriesjson(id: int):
+    if request.method == 'GET':
+        return return_api(series_json(id))
+
+    elif request.method == 'POST':
+        return return_api(write_series_json(id), code=201)
+
+
+# =====================
 # Library Import
 # =====================
 @api.route('/libraryimport', methods=['GET', 'POST'])
@@ -750,6 +1238,7 @@ def api_volumes_search():
             site_url="",
             monitored=True,
             monitor_new_issues=True,
+            quality_profile_id=get_default_profile_id(),
             root_folder=1,
             folder="",
             custom_folder=False,
@@ -770,10 +1259,19 @@ def api_volumes():
         query = extract_key(request, 'query', False)
         sort = extract_key(request, 'sort', False)
         filter = extract_key(request, 'filter', False)
+        quality_profile_id = extract_key(
+            request,
+            'quality_profile_id',
+            False
+        )
         if query:
-            volumes = Library.search(query, sort, filter)
+            volumes = Library.search(query, sort, filter, quality_profile_id)
         else:
-            volumes = Library.get_public_volumes(sort, filter)
+            volumes = Library.get_public_volumes(
+                sort,
+                filter,
+                quality_profile_id
+            )
 
         return return_api(volumes)
 
@@ -804,6 +1302,12 @@ def api_volumes():
 
         volume_folder = data.get('volume_folder') or None
 
+        quality_profile_id = data.get('quality_profile_id')
+        if quality_profile_id is None:
+            quality_profile_id = get_default_profile_id()
+        elif not isinstance(quality_profile_id, int):
+            raise InvalidKeyValue('quality_profile_id', quality_profile_id)
+
         auto_search = data.get('auto_search', True)
         if not isinstance(auto_search, bool):
             raise InvalidKeyValue('auto_search', auto_search)
@@ -825,7 +1329,8 @@ def api_volumes():
             monitor_new_issues,
             volume_folder,
             sv,
-            auto_search
+            auto_search,
+            quality_profile_id
         )
         volume_info = Library.get_volume(volume_id).get_public_data()
         return return_api(volume_info, code=201)

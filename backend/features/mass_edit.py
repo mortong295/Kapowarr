@@ -81,6 +81,30 @@ class MassEditorRootFolder(MassEditorAction):
         return
 
 
+class MassEditorQualityProfile(MassEditorAction):
+    identifier = 'quality_profile'
+
+    def run(self, **kwargs) -> None:
+        quality_profile_id = kwargs.get('quality_profile_id')
+        if quality_profile_id is None:
+            raise KeyNotFound('quality_profile_id')
+        if not isinstance(quality_profile_id, int):
+            raise InvalidKeyValue('quality_profile_id', quality_profile_id)
+
+        from backend.implementations.arr_features import profile_exists
+        if not profile_exists(quality_profile_id):
+            raise InvalidKeyValue('quality_profile_id', quality_profile_id)
+
+        LOGGER.info(
+            f'Using mass editor, setting quality profile to {quality_profile_id} for volumes: {self.volume_ids}'
+        )
+
+        for volume_id in self.volume_ids:
+            Volume(volume_id).update({'quality_profile_id': quality_profile_id})
+
+        return
+
+
 class MassEditorRename(MassEditorAction):
     identifier = 'rename'
 

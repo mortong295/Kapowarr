@@ -132,6 +132,8 @@ class PublicSettingsValues:
 
     date_type: DateType = DateType.COVER_DATE
 
+    default_quality_profile_id: int = 0
+
     def todict(self, to_public: bool = True) -> Dict[str, Any]:
         """Convert the dataclass to a dictionary.
 
@@ -176,6 +178,7 @@ task_intervals = {
     # If there are tasks that should be run at the same time,
     # but per se after each other, put them in that order in the dict.
     'update_all': 3600, # every hour
+    'sync_import_lists': 43200, # every 12 hours
     'search_all': 86400 # every day
 }
 
@@ -504,6 +507,14 @@ class Settings(metaclass=Singleton):
                 'default', 'paused', 'low', 'normal', 'high', 'force'
             ):
                 raise InvalidKeyValue(key, value)
+
+        elif key == 'default_quality_profile_id':
+            if value < 0:
+                raise InvalidKeyValue(key, value)
+            if value:
+                from backend.implementations.arr_features import profile_exists
+                if not profile_exists(value):
+                    raise InvalidKeyValue(key, value)
 
         elif key == 'volume_padding' and not 1 <= value <= 3:
             raise InvalidKeyValue(key, value)

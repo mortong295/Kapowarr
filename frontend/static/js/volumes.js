@@ -11,7 +11,8 @@ const library_els = {
 	view_options: {
 		sort: document.querySelector('#sort-button'),
 		view: document.querySelector('#view-button'),
-		filter: document.querySelector('#filter-button')
+		filter: document.querySelector('#filter-button'),
+		profile_filter: document.querySelector('#profile-filter-button')
 	},
 	task_buttons: {
 		update_all: document.querySelector('#updateall-button'),
@@ -208,6 +209,8 @@ function fetchLibrary(api_key) {
 		filter: library_els.view_options.filter.value
 	};
 	const query = library_els.search.input.value;
+	if (library_els.view_options.profile_filter.value !== '')
+		params.quality_profile_id = library_els.view_options.profile_filter.value;
 	if (query !== '')
 		params.query = query;
 
@@ -301,6 +304,15 @@ usingApiKey()
 		setLocalStorage({'lib_filter': library_els.view_options.filter.value});
 		fetchLibrary(api_key);
 	};
+	library_els.view_options.profile_filter.onchange = e => fetchLibrary(api_key);
+	fetchAPI('/profiles', api_key).then(json => {
+		json.result.forEach(profile => {
+			const entry = document.createElement('option');
+			entry.value = profile.id;
+			entry.innerText = profile.name;
+			library_els.view_options.profile_filter.appendChild(entry);
+		});
+	});
 
     library_els.mass_edit.button.onclick =
     library_els.mass_edit.cancel.onclick =
@@ -310,19 +322,29 @@ usingApiKey()
                 toggle.removeAttribute('checked');
             else {
                 const select = document.querySelector('select[name="root_folder_id"]');
+                const profile_select = document.querySelector('select[name="quality_profile_id"]');
+                const loaders = [];
                 if (select.querySelector('option') === null) {
-                    fetchAPI('/rootfolder', api_key)
-                    .then(json => {
+                    loaders.push(fetchAPI('/rootfolder', api_key).then(json => {
                         json.result.forEach(rf => {
                             const entry = document.createElement('option');
                             entry.value = rf.id;
                             entry.innerText = rf.folder;
                             select.appendChild(entry);
                         });
-                        toggle.setAttribute('checked', '');
-                    });
-                } else
-                    toggle.setAttribute('checked', '');
+                    }));
+                };
+                if (profile_select.querySelector('option') === null) {
+                    loaders.push(fetchAPI('/profiles', api_key).then(json => {
+                        json.result.forEach(profile => {
+                            const entry = document.createElement('option');
+                            entry.value = profile.id;
+                            entry.innerText = profile.name;
+                            profile_select.appendChild(entry);
+                        });
+                    }));
+                };
+                Promise.all(loaders).then(() => toggle.setAttribute('checked', ''));
             }
         };
 	library_els.mass_edit.bar.querySelectorAll('.action-divider > button[data-action]').forEach(
@@ -356,6 +378,16 @@ usingApiKey()
 				'monitoring_scheme': document.querySelector(
 					'select[name="monitoring_scheme"]'
 				).value
+			}
+		);
+	library_els.mass_edit.bar.querySelector('button[data-action="quality_profile"]').onclick =
+		e => runAction(
+			api_key,
+			e.target.dataset.action,
+			{
+				'quality_profile_id': parseInt(document.querySelector(
+					'select[name="quality_profile_id"]'
+				).value)
 			}
 		);
 

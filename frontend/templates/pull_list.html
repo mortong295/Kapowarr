@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Pull List{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/arr_skeleton.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/pull_list.js') }}" defer></script>
+{% endblock %}
+{% block main %}
+<main>
+	<section class="tool-bar-container" aria-label="Tool bar">
+		<div class="tool-bar">
+			<button id="sync-import-lists-button" type="button">Sync Import Lists</button>
+			<button id="search-pull-list-button" type="button">Search Pull List</button>
+		</div>
+	</section>
+	<div class="arr-page">
+		<header class="arr-header">
+			<div>
+				<h1>Pull List</h1>
+				<p>Track weekly comic releases, match them to monitored volumes, and feed upcoming issues into the Calendar.</p>
+			</div>
+			<span class="arr-badge">Mylar parity foundation</span>
+		</header>
+		<section class="arr-panel">
+			<div class="arr-panel-header">
+				<h2>Add Manual Pull-List Item</h2>
+				<p id="pull-list-form-feedback" class="arr-feedback">Add a one-off weekly release when it is not supplied by an import list.</p>
+			</div>
+			<form id="pull-list-form" class="arr-form">
+				<div class="arr-form-grid">
+					<label>
+						<span>Release Date</span>
+						<input id="pull-release-date-input" type="date">
+					</label>
+					<label>
+						<span>Publisher</span>
+						<input id="pull-publisher-input" type="text" placeholder="DC Comics">
+					</label>
+					<label>
+						<span>Series</span>
+						<input id="pull-series-input" type="text" placeholder="Batman" required>
+					</label>
+					<label>
+						<span>Issue Number</span>
+						<input id="pull-issue-input" type="text" placeholder="1">
+					</label>
+					<label>
+						<span>Title</span>
+						<input id="pull-title-input" type="text" placeholder="Optional issue title">
+					</label>
+				</div>
+				<div class="arr-form-actions">
+					<button id="add-pull-list-button" type="submit">Add Pull-List Item</button>
+				</div>
+			</form>
+		</section>
+
+		<section class="arr-panel arr-section-gap">
+			<div class="arr-panel-header">
+				<h2>Weekly Releases</h2>
+				<p id="pull-list-summary">Loading pull list…</p>
+			</div>
+			<table class="arr-table">
+				<thead>
+					<tr>
+						<th>Date</th>
+						<th>Publisher</th>
+						<th>Series</th>
+						<th>Issue</th>
+						<th>Match</th>
+						<th>Status</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody id="pull-list-items"></tbody>
+			</table>
+			<p id="pull-list-empty" class="arr-empty-state hidden">No pull-list items have been added yet.</p>
+		</section>
+	</div>
+</main>
+{% endblock main %}

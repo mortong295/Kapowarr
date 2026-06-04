@@ -31,6 +31,7 @@ const SearchEls = {
 		monitor_issues_input: document.querySelector('#monitor-issues-input'),
 		monitoring_scheme: document.querySelector('#monitoring-scheme-input'),
 		root_folder_input: document.querySelector('#rootfolder-input'),
+		quality_profile_input: document.querySelector('#quality-profile-input'),
 		volume_folder_input: document.querySelector('#volumefolder-input'),
         special_state_input: document.querySelector('#specialoverride-input'),
 		auto_search_input: document.querySelector('#auto-search-input'),
@@ -375,6 +376,20 @@ function fillRootFolderInput(api_key) {
 	});
 };
 
+
+function fillQualityProfileInput(api_key) {
+	fetchAPI('/profiles', api_key)
+	.then(json => {
+		SearchEls.window.quality_profile_input.innerHTML = '';
+		json.result.forEach(profile => {
+			const option = document.createElement('option');
+			option.value = profile.id;
+			option.innerText = profile.name;
+			SearchEls.window.quality_profile_input.appendChild(option);
+		});
+	});
+};
+
 function showAddWindow(comicvine_id, api_key) {
 	const volume_data = document.querySelector(
 		`button[data-comicvine_id="${comicvine_id}"]`
@@ -418,6 +433,7 @@ function addVolume() {
 		'monitor': SearchEls.window.monitor_volume_input.value === "true",
 		'monitoring_scheme': SearchEls.window.monitoring_scheme.value,
 		'monitor_new_issues': SearchEls.window.monitor_issues_input.value === "true",
+		'quality_profile_id': parseInt(SearchEls.window.quality_profile_input.value),
 		'volume_folder': '',
         'special_version': SearchEls.window.special_state_input.value || null,
 		'auto_search': SearchEls.window.auto_search_input.checked
@@ -464,7 +480,10 @@ function addVolume() {
 
 // code run on load
 usingApiKey()
-.then(api_key => fillRootFolderInput(api_key));
+.then(api_key => {
+	fillRootFolderInput(api_key);
+	fillQualityProfileInput(api_key);
+});
 
 SearchEls.search_bar.cancel.onclick = clearSearch;
 SearchEls.window.form.action = 'javascript:addVolume();';

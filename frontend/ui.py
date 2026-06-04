@@ -66,6 +66,26 @@ def ui_library_import():
     return render('library_import.html')
 
 
+@ui.route('/calendar', methods=methods)
+def ui_calendar():
+    return render('calendar.html')
+
+
+@ui.route('/pull-list', methods=methods)
+def ui_pull_list():
+    return render('pull_list.html')
+
+
+@ui.route('/story-arcs', methods=methods)
+def ui_story_arcs():
+    return render('story_arcs.html')
+
+
+@ui.route('/wanted', methods=methods)
+def ui_wanted():
+    return render('wanted.html')
+
+
 @ui.route('/volumes/<id>', methods=methods)
 def ui_view_volume(id):
     return render('view_volume.html')
@@ -114,6 +134,26 @@ def ui_download():
 @ui.route('/settings/downloadclients', methods=methods)
 def ui_download_clients():
     return render('settings_download_clients.html')
+
+
+@ui.route('/settings/profiles', methods=methods)
+def ui_profiles():
+    return render('settings_profiles.html')
+
+
+@ui.route('/settings/indexers', methods=methods)
+def ui_indexers():
+    return render('settings_indexers.html')
+
+
+@ui.route('/settings/connections', methods=methods)
+def ui_connections():
+    return render('settings_connections.html')
+
+
+@ui.route('/settings/importlists', methods=methods)
+def ui_import_lists():
+    return render('settings_importlists.html')
 
 
 @ui.route('/settings/metadata', methods=methods)

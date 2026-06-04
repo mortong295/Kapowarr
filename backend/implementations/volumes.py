@@ -274,6 +274,7 @@ class Volume:
                 year, publisher, volume_number,
                 description, site_url,
                 monitored, monitor_new_issues,
+                quality_profile_id,
                 root_folder, folder, custom_folder,
                 special_version, special_version_locked,
                 last_cv_fetch
@@ -302,6 +303,7 @@ class Volume:
                 special_version, special_version_locked,
                 description, site_url,
                 monitored, monitor_new_issues,
+                quality_profile_id, aqp.name AS quality_profile_name,
                 v.folder, root_folder,
                 rf.folder AS root_folder_path,
                 (
@@ -330,6 +332,8 @@ class Volume:
             FROM volumes v
             INNER JOIN root_folders rf
             ON v.root_folder = rf.id
+            LEFT JOIN arr_quality_profiles aqp
+            ON v.quality_profile_id = aqp.id
             WHERE v.id = ?
             LIMIT 1;
             """,
@@ -536,7 +540,8 @@ class Volume:
                 'monitored',
                 'monitor_new_issues',
                 'special_version',
-                'special_version_locked'
+                'special_version_locked',
+                'quality_profile_id'
             )
 
         else:
@@ -558,6 +563,11 @@ class Volume:
         # Confirm data type of submitted value
         if not isinstance(value, key_data.type):
             raise InvalidKeyValue(key, value)
+
+        if key == 'quality_profile_id':
+            from backend.implementations.arr_features import profile_exists
+            if not profile_exists(value):
+                raise InvalidKeyValue(key, value)
 
         return value
 
@@ -882,7 +892,8 @@ class Library:
     def get_public_volumes(
         cls,
         sort: LibrarySorting = LibrarySorting.TITLE,
-        filter: Union[LibraryFilter, int, None] = None
+        filter: Union[LibraryFilter, int, None] = None,
+        quality_profile_id: Union[int, None] = None
     ) -> List[Dict[str, Any]]:
         """Get all the volumes in the library.
 
@@ -903,6 +914,13 @@ class Library:
             sql_filter = f"WHERE comicvine_id = {filter}"
         else:
             sql_filter = ''
+
+        if quality_profile_id is not None:
+            profile_filter = f"quality_profile_id = {quality_profile_id}"
+            if sql_filter:
+                sql_filter += f" AND {profile_filter}"
+            else:
+                sql_filter = f"WHERE {profile_filter}"
 
         volumes = get_db().execute(f"""
             WITH
@@ -925,6 +943,13 @@ class Library:
                 title, year, publisher,
                 volume_number, description,
                 monitored, monitor_new_issues,
+                quality_profile_id,
+                (
+                    SELECT name
+                    FROM arr_quality_profiles
+                    WHERE id = volumes.quality_profile_id
+                    LIMIT 1
+                ) AS quality_profile_name,
                 folder,
                 (
                     SELECT COUNT(id) FROM vol_issues
@@ -954,7 +979,8 @@ class Library:
         cls,
         query: str,
         sort: LibrarySorting = LibrarySorting.TITLE,
-        filter: Union[LibraryFilter, None] = None
+        filter: Union[LibraryFilter, None] = None,
+        quality_profile_id: Union[int, None] = None
     ) -> List[Dict[str, Any]]:
         """Search in the library with a query.
 
@@ -975,7 +1001,7 @@ class Library:
         if query.startswith(('4050-', 'cv:')):
             try:
                 cv_id = to_number_cv_id((query,))[0]
-                volumes = cls.get_public_volumes(sort, cv_id)
+                volumes = cls.get_public_volumes(sort, cv_id, quality_profile_id)
 
             except ValueError:
                 volumes = []
@@ -983,7 +1009,7 @@ class Library:
         else:
             volumes = [
                 v
-                for v in cls.get_public_volumes(sort, filter)
+                for v in cls.get_public_volumes(sort, filter, quality_profile_id)
                 if match_title(v['title'], query, allow_contains=True)
             ]
 
@@ -1080,7 +1106,8 @@ class Library:
         monitor_new_issues: bool = True,
         volume_folder: Union[str, None] = None,
         special_version: Union[SpecialVersion, None] = None,
-        auto_search: bool = False
+        auto_search: bool = False,
+        quality_profile_id: Union[int, None] = None
     ) -> int:
         """Add a volume to the library.
 
@@ -1112,6 +1139,10 @@ class Library:
                 after adding it.
                 Defaults to False.
 
+            quality_profile_id (Union[int, None], optional): Quality profile to
+                assign. If omitted, the default quality profile is used.
+                Defaults to None.
+
         Raises:
             RootFolderNotFound: The root folder with the given ID was not found.
             VolumeFolderInvalid: The volume folder is the parent or child of
@@ -1124,16 +1155,25 @@ class Library:
         """
         from backend.implementations.naming import generate_volume_folder_path
 
+        from backend.implementations.arr_features import (get_default_profile_id,
+                                                          profile_exists)
+
+        if quality_profile_id is None or quality_profile_id == 0:
+            quality_profile_id = get_default_profile_id()
+        elif not profile_exists(quality_profile_id):
+            raise InvalidKeyValue('quality_profile_id', quality_profile_id)
+
         LOGGER.info(
             'Adding a volume to the library: '
-            'CV ID %d, RF ID %d, M %s, MS %s, MNI %s, VF %s, SV %s',
+            'CV ID %d, RF ID %d, M %s, MS %s, MNI %s, VF %s, SV %s, QP %s',
             comicvine_id,
             root_folder_id,
             monitored,
             monitor_scheme.value,
             monitor_new_issues,
             volume_folder,
-            special_version
+            special_version,
+            quality_profile_id
         )
 
         potential_volume_id = cls._cv_to_id(comicvine_id)
@@ -1160,6 +1200,7 @@ class Library:
                     site_url,
                     monitored,
                     monitor_new_issues,
+                    quality_profile_id,
                     root_folder,
                     custom_folder,
                     last_cv_fetch,
@@ -1169,6 +1210,7 @@ class Library:
                     :comicvine_id, :title, :alt_title,
                     :year, :publisher, :volume_number, :description,
                     :site_url, :monitored, :monitor_new_issues,
+                    :quality_profile_id,
                     :root_folder, :custom_folder,
                     :last_cv_fetch, :special_version, :special_version_locked
                 );
@@ -1184,6 +1226,7 @@ class Library:
                     "site_url": vd["site_url"],
                     "monitored": monitored,
                     "monitor_new_issues": monitor_new_issues,
+                    "quality_profile_id": quality_profile_id,
                     "root_folder": root_folder.id,
                     "custom_folder": volume_folder is not None,
                     "last_cv_fetch": round(time()),

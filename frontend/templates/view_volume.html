@@ -34,6 +34,8 @@
 		<td>
 			<a href="" target="_blank"></a>
 		</td>
+		<td class="quality-column"></td>
+		<td class="score-column"></td>
 		<td class="source-column"></td>
 		<td class="search-action-column action-list" aria-label="Actions">
 			{{ icon_button('', "Download", "download.svg") }}
@@ -144,6 +146,14 @@
 						<p>Apply a monitoring scheme once, on save.</p>
 					</td>
 				</tr>
+
+				<tr>
+					<th><label for="quality-profile-input">Quality Profile</label></th>
+					<td>
+						<select id="quality-profile-input">
+						</select>
+					</td>
+				</tr>
 				<tr>
 					<th><label for="root-folder-input">Root folder</label></th>
 					<td>
@@ -209,6 +219,8 @@
 				<tr>
 					<th class="match-column">Match</th>
 					<th>Title</th>
+					<th class="quality-column">Quality</th>
+					<th class="score-column">Score</th>
 					<th class="source-column">Source</th>
 					<th class="search-action-column">Action</th>
 				</tr>
@@ -393,6 +405,12 @@
 					"View the general files of the volume",
 					"files.svg",
 					"General Files"
+				) }}
+				{{ icon_button(
+					"metadata-button",
+					"Write ComicInfo.xml and series.json metadata for this volume",
+					"files.svg",
+					"Write Metadata"
 				) }}
 				{{ icon_button(
 					"edit-button",

@@ -1,20 +1,149 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import gather, run
-from typing import Dict, List, Tuple, Union
+from urllib.parse import urljoin
+from xml.etree import ElementTree
+from typing import Any, Dict, List, Mapping, Tuple, Union
 
+from backend.base.custom_exceptions import InvalidKeyValue
 from backend.base.definitions import (QUERY_FORMATS, MatchedSearchResultData,
                                       SearchResultData, SearchSource,
                                       SpecialVersion)
-from backend.base.file_extraction import refine_special_version
+from backend.base.file_extraction import (extract_filename_data,
+                                      refine_special_version)
 from backend.base.helpers import (AsyncSession, check_overlapping_issues,
                                   extract_year_from_date, force_range,
-                                  get_subclasses, normalise_query_string)
+                                  normalise_query_string)
 from backend.base.logging import LOGGER
 from backend.implementations.external_indexers import search_external_indexers
 from backend.implementations.getcomics import search_getcomics
 from backend.implementations.matching import check_search_result_match
 from backend.implementations.volumes import Volume
+
+
+QUALITY_FORMATS = ('cbz', 'cbr', 'pdf', 'epub')
+QUALITY_FORMAT_ALIASES = {
+    'comic book zip': 'cbz',
+    'zip': 'cbz',
+    'comic book rar': 'cbr',
+    'rar': 'cbr',
+    'pdf': 'pdf',
+    'epub': 'epub'
+}
+QUALITY_RANKS = {
+    'preferred': 'Preferred',
+    'allowed': 'Allowed',
+    'unknown': 'Unknown',
+    'rejected': 'Rejected'
+}
+
+
+def _normalise_quality_terms(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+
+    return [
+        str(v).strip().lower()
+        for v in value
+        if str(v).strip()
+    ]
+
+
+def _detect_quality_format(result: SearchResultData) -> str:
+    haystack = ' '.join((
+        result.get('display_title') or '',
+        result.get('link') or '',
+        result.get('source') or ''
+    )).lower()
+
+    for fmt in QUALITY_FORMATS:
+        if f'.{fmt}' in haystack or f' {fmt}' in haystack:
+            return fmt
+
+    for alias, fmt in QUALITY_FORMAT_ALIASES.items():
+        if alias in haystack:
+            return fmt
+
+    return 'unknown'
+
+
+def _score_quality_profile(
+    result: SearchResultData,
+    profile: Mapping[str, Any]
+) -> Dict[str, Any]:
+    quality_format = _detect_quality_format(result)
+    allowed_formats = _normalise_quality_terms(profile.get('allowed_formats'))
+    preferred_formats = _normalise_quality_terms(
+        profile.get('preferred_formats')
+    )
+    custom_formats = profile.get('custom_formats') or {}
+    if not isinstance(custom_formats, dict):
+        custom_formats = {}
+
+    score = 0
+    issue = None
+    quality_rank = 'unknown'
+    profile_match = True
+
+    if quality_format != 'unknown':
+        if allowed_formats and quality_format not in allowed_formats:
+            profile_match = False
+            issue = f'{quality_format.upper()} is not allowed by profile'
+            quality_rank = 'rejected'
+        elif quality_format in preferred_formats:
+            score += 100
+            quality_rank = 'preferred'
+        else:
+            quality_rank = 'allowed'
+
+    haystack = ' '.join((
+        result.get('display_title') or '',
+        result.get('link') or '',
+        result.get('source') or ''
+    )).lower()
+    for name, value in custom_formats.items():
+        token = str(name).strip().lower()
+        if not token or token not in haystack:
+            continue
+        try:
+            score += int(value)
+        except (TypeError, ValueError):
+            continue
+
+    if issue is None:
+        if quality_rank == 'unknown':
+            issue = 'Format could not be detected from provider title'
+        else:
+            issue = None
+
+    return {
+        'quality_profile_match': profile_match,
+        'quality_profile_issue': issue,
+        'quality_profile_id': profile.get('id') or 0,
+        'quality_profile_name': profile.get('name') or 'Unknown Profile',
+        'quality_format': quality_format,
+        'quality_score': score,
+        'quality_rank': QUALITY_RANKS[quality_rank]
+    }
+
+
+def _score_for_volume_profile(
+    result: SearchResultData,
+    quality_profile_id: int
+) -> Dict[str, Any]:
+    try:
+        from backend.implementations.arr_features import get_profile
+        profile = get_profile(quality_profile_id)
+    except (InvalidKeyValue, KeyError, RuntimeError, TypeError, ValueError):
+        profile = {
+            'id': 0,
+            'name': 'Unknown Profile',
+            'allowed_formats': [],
+            'preferred_formats': [],
+            'custom_formats': {}
+        }
+
+    return _score_quality_profile(result, profile)
 
 
 def _rank_search_result(
@@ -49,6 +178,11 @@ def _rank_search_result(
 
     # Prefer matches (False == 0 == higher rank)
     rating.append(not result['match'])
+
+    # Prefer results that satisfy the volume quality profile. Higher quality
+    # scores rank before lower scores, Radarr/Sonarr-style.
+    rating.append(not result.get('quality_profile_match', True))
+    rating.append(-int(result.get('quality_score', 0)))
 
     # The more words in the search term that are present in
     # the search results' title, the higher ranked it gets
@@ -146,6 +280,161 @@ class SearchExternalIndexers(SearchSource):
         return await search_external_indexers(session, self.query)
 
 
+def _normalise_indexer_implementation(indexer: Mapping[str, Any]) -> str:
+    return str(indexer.get('implementation') or '').strip().lower()
+
+
+def _normalise_indexer_settings(indexer: Mapping[str, Any]) -> Mapping[str, Any]:
+    settings = indexer.get('settings') or {}
+    return settings if isinstance(settings, dict) else {}
+
+
+def _rss_items(feed_body: str) -> List[Dict[str, str]]:
+    if not feed_body:
+        return []
+
+    try:
+        root = ElementTree.fromstring(feed_body)
+    except ElementTree.ParseError:
+        return []
+
+    items: List[Dict[str, str]] = []
+    for item in root.findall('.//item'):
+        title = item.findtext('title') or ''
+        link = item.findtext('link') or item.findtext('guid') or ''
+        if not title or not link:
+            continue
+        items.append({'title': title.strip(), 'link': link.strip()})
+
+    for entry in root.findall('.//{http://www.w3.org/2005/Atom}entry'):
+        title = entry.findtext('{http://www.w3.org/2005/Atom}title') or ''
+        link = ''
+        link_el = entry.find('{http://www.w3.org/2005/Atom}link')
+        if link_el is not None:
+            link = link_el.attrib.get('href') or ''
+        if not link:
+            link = entry.findtext('{http://www.w3.org/2005/Atom}id') or ''
+        if not title or not link:
+            continue
+        items.append({'title': title.strip(), 'link': link.strip()})
+
+    return items
+
+
+def _query_matches_title(query: str, title: str) -> bool:
+    query_terms = [
+        term.lower()
+        for term in normalise_query_string(query).split(' ')
+        if term.strip()
+    ]
+    title_lower = title.lower()
+    return all(term in title_lower for term in query_terms)
+
+
+def _format_indexer_result(
+    indexer: Mapping[str, Any],
+    title: str,
+    link: str
+) -> SearchResultData:
+    return {
+        **extract_filename_data(
+            title,
+            assume_volume_number=False,
+            fix_year=True
+        ),
+        'link': link,
+        'display_title': title,
+        'source': indexer.get('name') or indexer.get('implementation') or ''
+    }
+
+
+async def _search_rss_indexer(
+    session: AsyncSession,
+    query: str,
+    indexer: Mapping[str, Any]
+) -> List[SearchResultData]:
+    settings = _normalise_indexer_settings(indexer)
+    feed_url = settings.get('url') or settings.get('feed_url')
+    if not isinstance(feed_url, str) or not feed_url.strip():
+        return []
+
+    feed_body = await session.get_text(feed_url.strip(), quiet_fail=True)
+    return [
+        _format_indexer_result(indexer, item['title'], item['link'])
+        for item in _rss_items(feed_body)
+        if _query_matches_title(query, item['title'])
+    ]
+
+
+async def _search_newznab_indexer(
+    session: AsyncSession,
+    query: str,
+    indexer: Mapping[str, Any]
+) -> List[SearchResultData]:
+    settings = _normalise_indexer_settings(indexer)
+    base_url = settings.get('base_url') or settings.get('url')
+    api_key = settings.get('api_key') or settings.get('apikey')
+    if not isinstance(base_url, str) or not base_url.strip():
+        return []
+
+    params: Dict[str, Any] = {'t': 'search', 'q': query, 'o': 'xml'}
+    if isinstance(api_key, str) and api_key.strip():
+        params['apikey'] = api_key.strip()
+    if settings.get('categories'):
+        params['cat'] = str(settings['categories'])
+
+    feed_body = await session.get_text(
+        urljoin(base_url.rstrip('/') + '/', 'api'),
+        params=params,
+        quiet_fail=True
+    )
+    return [
+        _format_indexer_result(indexer, item['title'], item['link'])
+        for item in _rss_items(feed_body)
+    ]
+
+
+async def _search_indexer(
+    session: AsyncSession,
+    query: str,
+    indexer: Mapping[str, Any]
+) -> List[SearchResultData]:
+    implementation = _normalise_indexer_implementation(indexer)
+    if implementation == 'getcomics':
+        results = await search_getcomics(session, query)
+        for result in results:
+            result['source'] = indexer.get('name') or result['source']
+        return results
+
+    if implementation == 'rawrss':
+        return await _search_rss_indexer(session, query, indexer)
+
+    if implementation in ('newznab', 'torznab'):
+        return await _search_newznab_indexer(session, query, indexer)
+
+    return []
+
+
+def _get_enabled_indexers() -> List[Dict[str, Any]]:
+    try:
+        from backend.implementations.arr_features import get_providers
+        return [
+            indexer
+            for indexer in get_providers('indexers')
+            if indexer.get('enabled')
+        ]
+    except (InvalidKeyValue, KeyError, RuntimeError, TypeError, ValueError):
+        return [{
+            'id': 0,
+            'name': 'GetComics',
+            'implementation': 'getcomics',
+            'enabled': True,
+            'priority': 25,
+            'settings': {},
+            'tags': []
+        }]
+
+
 async def search_multiple_queries(*queries: str) -> List[SearchResultData]:
     """Do a manual search for multiple queries asynchronously.
 
@@ -153,13 +442,17 @@ async def search_multiple_queries(*queries: str) -> List[SearchResultData]:
         List[SearchResultData]: The search results for all queries together,
         duplicates removed.
     """
+    indexers = _get_enabled_indexers()
     async with AsyncSession() as session:
         searches = [
-            Source(query).search(session)
-            for Source in get_subclasses(SearchSource)
+            _search_indexer(session, query, indexer)
+            for indexer in indexers
+            for query in queries
+        ] + [
+            search_external_indexers(session, query)
             for query in queries
         ]
-        responses = await gather(*searches)
+        responses = await gather(*searches) if searches else []
 
     search_results: List[SearchResultData] = []
     processed_links = set()
@@ -252,9 +545,13 @@ def manual_search(
                 result, volume_data, volume_issues,
                 number_to_year, calculated_issue_number
             )
+            quality = _score_for_volume_profile(
+                result, volume_data.quality_profile_id
+            )
             results.append({
                 **result,
-                **match
+                **match,
+                **quality
             })
 
         # Sort results; put best result at top
@@ -325,7 +622,7 @@ def auto_search(
     search_results = [
         r
         for r in manual_search(volume_id, issue_id)
-        if r['match']
+        if r['match'] and r.get('quality_profile_match', True)
     ]
 
     if issue_id is not None or volume_data.special_version not in (

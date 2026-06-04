@@ -52,6 +52,24 @@ download_type_to_class: Dict[str, Type[Download]] = {
 }
 
 
+def _notify_download_grabbed(download: Download) -> None:
+    from backend.implementations.arr_features import send_connection_event
+
+    send_connection_event('download_grabbed', {
+        'title': 'Download grabbed',
+        'message': f'Grabbed {download.title or download.web_title}',
+        'download_id': download.id,
+        'volume_id': download.volume_id,
+        'issue_id': download.issue_id,
+        'source': download.source_type.value,
+        'source_name': download.source_name,
+        'web_title': download.web_title,
+        'web_sub_title': download.web_sub_title,
+        'web_link': download.web_link
+    })
+    return
+
+
 class DownloadHandler(metaclass=Singleton):
     queue: List[Download] = []
 
@@ -321,6 +339,7 @@ class DownloadHandler(metaclass=Singleton):
                 thread.start()
 
             WebSocket().emit(AddedToQueueEvent(download))
+            _notify_download_grabbed(download)
         return downloads
 
     # region Getting

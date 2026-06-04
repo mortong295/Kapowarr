@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Calendar{% endblock %}
+{% block css %}
+	<link rel="stylesheet" href="{{ url_for('static', filename='css/arr_skeleton.css') }}">
+{% endblock %}
+{% block js %}
+	<script src="{{ url_for('static', filename='js/calendar.js') }}" defer></script>
+{% endblock %}
+{% block main %}
+<main>
+	<section class="tool-bar-container" aria-label="Tool bar">
+		<div class="tool-bar"></div>
+	</section>
+	<div class="arr-page">
+		<header class="arr-header">
+			<div>
+				<h1>Calendar</h1>
+				<p>Upcoming comic releases for known volumes. This V1 page establishes the *arr-style calendar surface and is ready for pull-list providers.</p>
+			</div>
+			<span class="arr-badge">V1 UX skeleton</span>
+		</header>
+		<section class="arr-panel">
+			<div class="arr-panel-header">
+				<h2>Upcoming Issues</h2>
+				<p id="calendar-summary">Loading upcoming issues…</p>
+			</div>
+			<table class="arr-table">
+				<thead>
+					<tr>
+						<th>Date</th>
+						<th>Volume</th>
+						<th>Issue</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody id="calendar-items"></tbody>
+			</table>
+			<p id="calendar-empty" class="arr-empty-state hidden">No upcoming dated issues were found in the next 90 days.</p>
+		</section>
+
+		<section class="arr-panel arr-section-gap">
+			<div class="arr-panel-header">
+				<h2>Pull List</h2>
+				<p id="calendar-pull-summary">Loading pull-list items…</p>
+			</div>
+			<table class="arr-table">
+				<thead>
+					<tr>
+						<th>Date</th>
+						<th>Series</th>
+						<th>Issue</th>
+						<th>Match</th>
+					</tr>
+				</thead>
+				<tbody id="calendar-pull-items"></tbody>
+			</table>
+			<p id="calendar-pull-empty" class="arr-empty-state hidden">No pull-list entries have been synced yet.</p>
+		</section>
+	</div>
+</main>
+{% endblock main %}
