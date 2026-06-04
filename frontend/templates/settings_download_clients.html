@@ -162,6 +162,12 @@
 
 	{{ window(False, "choose-torrent-window", "Choose Download Client", choose_content) }}
 
+	{% set choose_indexer_content %}
+		<div id="choose-indexer-list" class="client-list"></div>
+	{% endset %}
+
+	{{ window(False, "choose-indexer-window", "Choose Indexer", choose_indexer_content) }}
+
 	{% set add_content %}
 		<p class="error hidden" id="add-error"></p>
 		<form id="add-torrent-form">
@@ -226,6 +232,91 @@
 	{% endset %}
 
 	{{ window(False, "edit-torrent-window", "Edit Download Client", edit_content, edit_submit) }}
+
+	{% set add_indexer_content %}
+		<p class="error hidden" id="add-indexer-error"></p>
+		<form id="add-indexer-form">
+			<table>
+				<tr>
+					<th><label for="add-indexer-enabled-input">Enabled</label></th>
+					<td><input type="checkbox" id="add-indexer-enabled-input" checked></td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-title-input">Title</label></th>
+					<td><input type="text" id="add-indexer-title-input" required></td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-baseurl-input">Base URL</label></th>
+					<td>
+						<input type="text" id="add-indexer-baseurl-input" required>
+						<p>For Prowlarr, use the Prowlarr URL. For Newznab, use the indexer API URL.</p>
+					</td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-key-input">API Key</label></th>
+					<td><input type="password" id="add-indexer-key-input" required></td>
+				</tr>
+				<tr>
+					<th><label for="add-indexer-categories-input">Categories</label></th>
+					<td>
+						<input type="text" id="add-indexer-categories-input">
+						<p>Comma separated category IDs. Leave empty to let the indexer decide.</p>
+					</td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set add_indexer_submit %}
+		<button id="test-indexer-add" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-indexer-add" type="submit" form="add-indexer-form">Add</button>
+	{% endset %}
+
+	{{ window(False, "add-indexer-window", "Add Indexer", add_indexer_content, add_indexer_submit) }}
+
+	{% set edit_indexer_content %}
+		<p class="error hidden" id="edit-indexer-error"></p>
+		<form id="edit-indexer-form">
+			<table>
+				<tr>
+					<th><label for="edit-indexer-enabled-input">Enabled</label></th>
+					<td><input type="checkbox" id="edit-indexer-enabled-input"></td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-title-input">Title</label></th>
+					<td><input type="text" id="edit-indexer-title-input" required></td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-baseurl-input">Base URL</label></th>
+					<td><input type="text" id="edit-indexer-baseurl-input" required></td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-key-input">API Key</label></th>
+					<td><input type="password" id="edit-indexer-key-input" required></td>
+				</tr>
+				<tr>
+					<th><label for="edit-indexer-categories-input">Categories</label></th>
+					<td><input type="text" id="edit-indexer-categories-input"></td>
+				</tr>
+			</table>
+		</form>
+	{% endset %}
+
+	{% set edit_indexer_submit %}
+		<button id="delete-indexer-edit" type="button">Delete</button>
+		<button id="test-indexer-edit" class="test-button" type="button">
+			<div>Failed</div>
+			<div>Test</div>
+			<div>Success</div>
+		</button>
+		<button id="submit-indexer-edit" type="submit" form="edit-indexer-form">Save</button>
+	{% endset %}
+
+	{{ window(False, "edit-indexer-window", "Edit Indexer", edit_indexer_content, edit_indexer_submit) }}
 
 	{% set add_remote_mapping_content %}
 		<p class="error hidden" id="add-mapping-error"></p>
@@ -307,6 +398,13 @@
 			<button id="wetransfer-client" data-tag="wetransfer">WeTransfer</button>
 			<button id="pixeldrain-client" data-tag="pixeldrain">Pixeldrain</button>
 			<button id="getcomics-client" data-tag="getcomics">GetComics</button>
+		</div>
+		<h2>Indexers</h2>
+		<button id="add-indexer" class="add-button icon-text-color" title="Add indexer">
+			<img src="{{url_base}}/static/img/cancel.svg" alt="">
+		</button>
+		<div id="indexer-list" class="client-list">
+			<p class="empty-client-list">No Indexers</p>
 		</div>
 		<h2>Download Clients</h2>
 		<button id="add-torrent-client" class="add-button icon-text-color" title="Add download client">

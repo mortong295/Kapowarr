@@ -37,6 +37,7 @@ from backend.implementations.conversion import preview_mass_convert
 from backend.implementations.converters import ConvertersManager
 from backend.implementations.credentials import Credentials
 from backend.implementations.external_clients import ExternalClients
+from backend.implementations.external_indexers import ExternalIndexers
 from backend.implementations.file_matching import (get_file_matching,
                                                    set_file_matching)
 from backend.implementations.naming import (generate_volume_folder_name,
@@ -1442,6 +1443,98 @@ def api_external_client(id: int):
 
     elif request.method == 'DELETE':
         client.delete_client()
+        return return_api({})
+
+
+# =====================
+# Indexers
+# =====================
+def _mask_indexer_key(indexer_data: Dict[str, Any]) -> Dict[str, Any]:
+    if indexer_data.get('api_key'):
+        indexer_data['api_key'] = Constants.CREDENTIAL_REPLACEMENT
+    return indexer_data
+
+
+@api.route('/indexers', methods=['GET', 'POST'])
+@error_handler
+@auth
+def api_indexers():
+    if request.method == 'GET':
+        return return_api([
+            _mask_indexer_key(indexer_data)
+            for indexer_data in ExternalIndexers.get_indexers()
+        ])
+
+    elif request.method == 'POST':
+        data: dict = request.get_json()
+        data = {
+            k: data.get(k)
+            for k in (
+                'indexer_type', 'title', 'base_url',
+                'api_key', 'enabled', 'categories'
+            )
+        }
+        result = ExternalIndexers.add(**data).get_indexer_data()
+        return return_api(_mask_indexer_key(result), code=201)
+
+
+@api.route('/indexers/options', methods=['GET'])
+@error_handler
+@auth
+def api_indexer_options():
+    return return_api({
+        k: v.required_tokens
+        for k, v in ExternalIndexers.get_indexer_types().items()
+    })
+
+
+@api.route('/indexers/test', methods=['POST'])
+@error_handler
+@auth
+def api_indexer_test():
+    data: dict = request.get_json()
+    indexer_id = data.get('id')
+    if indexer_id is not None:
+        try:
+            indexer_id = int(indexer_id)
+        except (TypeError, ValueError):
+            raise InvalidKeyValue('id', indexer_id)
+        indexer = ExternalIndexers.get_indexer(indexer_id)
+        if data.get('indexer_type') is None:
+            data['indexer_type'] = indexer.indexer_type
+        if data.get('api_key') == Constants.CREDENTIAL_REPLACEMENT:
+            data['api_key'] = indexer.api_key
+
+    data = {
+        k: data.get(k)
+        for k in ('indexer_type', 'base_url', 'api_key')
+    }
+    return return_api(ExternalIndexers.test(**data))
+
+
+@api.route('/indexers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
+@error_handler
+@auth
+def api_indexer(id: int):
+    indexer = ExternalIndexers.get_indexer(id)
+
+    if request.method == 'GET':
+        return return_api(_mask_indexer_key(indexer.get_indexer_data()))
+
+    elif request.method == 'PUT':
+        data: dict = request.get_json()
+        data = {
+            k: data.get(k)
+            for k in (
+                'title', 'base_url',
+                'api_key', 'enabled', 'categories'
+            )
+        }
+        indexer.update_indexer(data)
+        return return_api(_mask_indexer_key(indexer.get_indexer_data()))
+
+    elif request.method == 'DELETE':
+        indexer.delete_indexer()
         return return_api({})
 
 
