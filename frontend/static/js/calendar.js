@@ -45,7 +45,12 @@ usingApiKey().then(api_key => {
 				items.forEach(addCalendarRow);
 
 			const pull_items = json.result.pull_list_items;
-			document.querySelector('#calendar-pull-summary').innerText = `${pull_items.length} pull-list item(s)`;
+			const pull_list = json.result.pull_list || {};
+			const sync_label = pull_list.sync_on_load
+				? `${pull_list.synced_providers.length} provider(s) synced`
+				: 'sync skipped';
+			document.querySelector('#calendar-pull-summary').innerText =
+				`${pull_items.length} pull-list item(s), ${sync_label}`;
 			if (!pull_items.length)
 				document.querySelector('#calendar-pull-empty').classList.remove('hidden');
 			else

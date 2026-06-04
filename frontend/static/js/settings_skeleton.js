@@ -2,7 +2,7 @@ const feature = document.querySelector('main').dataset.feature;
 const providerFeatures = ['indexers', 'connections', 'importlists'];
 const providerImplementations = {
 	indexers: ['getcomics', 'newznab', 'torznab', 'rawrss'],
-	connections: ['webhook', 'discord', 'gotify'],
+	connections: ['webhook', 'discord', 'gotify', 'plex', 'jellyfin'],
 	importlists: ['json', 'csv', 'pulllist', 'mylar', 'comicvine']
 };
 let apiKey = null;

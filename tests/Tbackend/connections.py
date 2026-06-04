@@ -27,11 +27,12 @@ class FakeSession:
     def __exit__(self, exc_type, exc, tb):
         return False
 
-    def post(self, url, json=None, headers=None):
+    def post(self, url, json=None, headers=None, params=None):
         self.calls.append({
             'url': url,
             'json': json,
-            'headers': headers or {}
+            'headers': headers or {},
+            'params': params or {}
         })
         return FakeResponse()
 
@@ -111,6 +112,61 @@ class connection_events(unittest.TestCase):
         self.assertEqual(FakeSession.calls[0]['url'], 'https://discord.invalid/webhook')
         self.assertEqual(payload['content'], 'Batman failed')
         self.assertEqual(payload['embeds'][0]['title'], 'Download failed')
+
+    def test_plex_connection_refreshes_configured_library_section(self):
+        save_provider('connections', {
+            'name': 'Plex',
+            'implementation': 'plex',
+            'enabled': True,
+            'settings': {
+                'base_url': 'https://plex.invalid',
+                'token': 'plex-token',
+                'section_id': '4'
+            }
+        })
+
+        results = send_connection_event('download_imported', {
+            'title': 'Download imported',
+            'message': 'Batman imported'
+        })
+
+        self.assertTrue(results[0]['success'])
+        self.assertEqual(
+            FakeSession.calls[0]['url'],
+            'https://plex.invalid/library/sections/4/refresh'
+        )
+        self.assertEqual(
+            FakeSession.calls[0]['params'],
+            {'X-Plex-Token': 'plex-token'}
+        )
+        self.assertIsNone(FakeSession.calls[0]['json'])
+
+    def test_jellyfin_connection_refreshes_library_with_api_key(self):
+        save_provider('connections', {
+            'name': 'Jellyfin',
+            'implementation': 'jellyfin',
+            'enabled': True,
+            'settings': {
+                'url': 'https://jellyfin.invalid',
+                'api_key': 'jellyfin-token'
+            }
+        })
+
+        results = send_connection_event('download_imported', {
+            'title': 'Download imported',
+            'message': 'Batman imported'
+        })
+
+        self.assertTrue(results[0]['success'])
+        self.assertEqual(
+            FakeSession.calls[0]['url'],
+            'https://jellyfin.invalid/Library/Refresh'
+        )
+        self.assertEqual(
+            FakeSession.calls[0]['headers'],
+            {'X-Emby-Token': 'jellyfin-token'}
+        )
+        self.assertIsNone(FakeSession.calls[0]['json'])
 
 
 if __name__ == '__main__':

@@ -1,14 +1,21 @@
 import unittest
 from tempfile import TemporaryDirectory
+from time import gmtime, strftime, time
 
 from flask import Flask
 
 from backend.implementations.arr_features import (delete_pull_list_item,
+                                                  get_calendar_pull_list,
                                                   get_pull_list, save_provider,
                                                   save_pull_list_item,
+                                                  sync_enabled_import_lists,
                                                   sync_import_list)
 from backend.internals.db import close_db, get_db, set_db_location, setup_db
 from backend.internals.server import Server
+
+
+def _date_from_now(days: int) -> str:
+    return strftime('%Y-%m-%d', gmtime(time() + days * 86400))
 
 
 class import_list_sync(unittest.TestCase):
@@ -33,7 +40,7 @@ class import_list_sync(unittest.TestCase):
             'enabled': True,
             'settings': {
                 'items': [{
-                    'release_date': '2026-06-10',
+                    'release_date': _date_from_now(7),
                     'publisher': 'DC Comics',
                     'series': 'Batman',
                     'issue_number': '1',
@@ -85,6 +92,50 @@ class import_list_sync(unittest.TestCase):
         delete_pull_list_item(item['id'])
 
         self.assertEqual(get_pull_list(), [])
+
+    def test_calendar_pull_list_syncs_enabled_import_lists(self):
+        save_provider('importlists', {
+            'name': 'Calendar JSON',
+            'implementation': 'json',
+            'enabled': True,
+            'settings': {
+                'items': [{
+                    'release_date': _date_from_now(7),
+                    'publisher': 'DC Comics',
+                    'series': 'Batman',
+                    'issue_number': '1',
+                    'issue_title': 'A New Beginning'
+                }]
+            }
+        })
+
+        results = sync_enabled_import_lists(notify=False)
+        items = get_calendar_pull_list(days=14)
+
+        self.assertEqual(results[0]['items_synced'], 1)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]['provider'], 'Calendar JSON')
+        self.assertEqual(items[0]['series'], 'Batman')
+
+    def test_calendar_pull_list_filters_dated_items_outside_window(self):
+        save_pull_list_item({
+            'release_date': _date_from_now(7),
+            'publisher': 'DC Comics',
+            'series': 'Batman',
+            'issue_number': '1',
+            'title': 'A New Beginning'
+        })
+        save_pull_list_item({
+            'release_date': _date_from_now(60),
+            'publisher': 'DC Comics',
+            'series': 'Superman',
+            'issue_number': '1',
+            'title': 'Future State'
+        })
+
+        items = get_calendar_pull_list(days=14)
+
+        self.assertEqual([item['series'] for item in items], ['Batman'])
 
 
 if __name__ == '__main__':

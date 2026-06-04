@@ -13,7 +13,7 @@ from csv import DictReader
 from io import StringIO
 from json import dumps, loads
 from os.path import join
-from time import time
+from time import gmtime, strftime, time
 from typing import Any, Dict, Iterable, List, Mapping, Tuple, Union
 from xml.etree.ElementTree import Element, ParseError, SubElement, fromstring, tostring
 
@@ -563,7 +563,7 @@ def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
             'getcomics', 'newznab', 'torznab', 'rawrss'
         },
         'connections': {
-            'webhook', 'discord', 'gotify'
+            'webhook', 'discord', 'gotify', 'plex', 'jellyfin'
         },
         'importlists': {
             'comicvine', 'pulllist', 'mylar', 'csv', 'json'
@@ -635,15 +635,17 @@ def _connection_accepts_event(
 
 def _post_connection_payload(
     url: str,
-    payload: Mapping[str, Any],
-    headers: Union[Mapping[str, str], None] = None
+    payload: Union[Mapping[str, Any], None] = None,
+    headers: Union[Mapping[str, str], None] = None,
+    params: Union[Mapping[str, str], None] = None
 ) -> Dict[str, Any]:
     try:
         with Session() as session:
             response = session.post(
                 url,
                 json=payload,
-                headers=dict(headers or {})
+                headers=dict(headers or {}),
+                params=dict(params or {})
             )
             response.raise_for_status()
             return {
@@ -722,6 +724,72 @@ def _send_gotify_connection(
     )
 
 
+def _send_plex_connection(
+    connection: Mapping[str, Any],
+    payload: Mapping[str, Any]
+) -> Dict[str, Any]:
+    settings = _connection_settings(connection)
+    base_url = settings.get('base_url') or settings.get('url')
+    token = (
+        settings.get('token')
+        or settings.get('api_key')
+        or settings.get('plex_token')
+    )
+    section_id = (
+        settings.get('section_id')
+        or settings.get('library_section_id')
+        or settings.get('section_key')
+        or 'all'
+    )
+    if not isinstance(base_url, str) or not base_url.strip():
+        return {'success': False, 'message': 'Missing Plex URL.'}
+    if not isinstance(token, str) or not token.strip():
+        return {'success': False, 'message': 'Missing Plex token.'}
+
+    params = {'X-Plex-Token': token.strip()}
+    path = settings.get('path')
+    if isinstance(path, str) and path.strip():
+        params['path'] = path.strip()
+
+    return _post_connection_payload(
+        (
+            base_url.rstrip('/')
+            + f'/library/sections/{str(section_id).strip()}/refresh'
+        ),
+        None,
+        params=params
+    )
+
+
+def _send_jellyfin_connection(
+    connection: Mapping[str, Any],
+    payload: Mapping[str, Any]
+) -> Dict[str, Any]:
+    settings = _connection_settings(connection)
+    base_url = settings.get('base_url') or settings.get('url')
+    token = (
+        settings.get('token')
+        or settings.get('api_key')
+        or settings.get('jellyfin_api_key')
+    )
+    item_id = settings.get('item_id') or settings.get('library_id')
+    if not isinstance(base_url, str) or not base_url.strip():
+        return {'success': False, 'message': 'Missing Jellyfin URL.'}
+    if not isinstance(token, str) or not token.strip():
+        return {'success': False, 'message': 'Missing Jellyfin API key.'}
+
+    endpoint = (
+        f"/Items/{str(item_id).strip()}/Refresh"
+        if item_id else
+        '/Library/Refresh'
+    )
+    return _post_connection_payload(
+        base_url.rstrip('/') + endpoint,
+        None,
+        {'X-Emby-Token': token.strip()}
+    )
+
+
 def _send_connection(
     connection: Mapping[str, Any],
     payload: Mapping[str, Any]
@@ -733,6 +801,10 @@ def _send_connection(
         return _send_discord_connection(connection, payload)
     if implementation == 'gotify':
         return _send_gotify_connection(connection, payload)
+    if implementation == 'plex':
+        return _send_plex_connection(connection, payload)
+    if implementation == 'jellyfin':
+        return _send_jellyfin_connection(connection, payload)
     return {
         'success': False,
         'message': f'{implementation or "connection"} dispatch is not implemented.'
@@ -805,6 +877,27 @@ def _match_pull_list_item(item: Mapping[str, Any]) -> Tuple[Union[int, None], Un
 def get_pull_list() -> List[Dict[str, Any]]:
     return get_db().execute(
         "SELECT * FROM pull_list_items ORDER BY release_date, publisher, series;"
+    ).fetchalldict()
+
+
+def get_calendar_pull_list(days: int = 90) -> List[Dict[str, Any]]:
+    start = strftime('%Y-%m-%d', gmtime(_now()))
+    end = strftime('%Y-%m-%d', gmtime(_now() + days * 86400))
+    return get_db().execute(
+        """
+        SELECT * FROM pull_list_items
+        WHERE
+            release_date = ''
+            OR release_date IS NULL
+            OR (release_date >= ? AND release_date <= ?)
+        ORDER BY
+            CASE WHEN release_date IS NULL OR release_date = '' THEN 1 ELSE 0 END,
+            release_date,
+            publisher,
+            series,
+            issue_number;
+        """,
+        (start, end)
     ).fetchalldict()
 
 
@@ -1036,7 +1129,7 @@ def _load_import_list_items(provider: Mapping[str, Any]) -> List[Dict[str, Any]]
     return []
 
 
-def sync_import_list(id: int) -> Dict[str, Any]:
+def sync_import_list(id: int, notify: bool = True) -> Dict[str, Any]:
     provider = get_provider('importlists', id)
     provider_name = provider['name']
     now = _now()
@@ -1060,12 +1153,13 @@ def sync_import_list(id: int) -> Dict[str, Any]:
         (now, now, id)
     )
     message = f'Synced {synced} pull-list item(s).'
-    send_connection_event('import_list_synced', {
-        'title': 'Import list synced',
-        'message': message,
-        'provider': provider_name,
-        'items_synced': synced
-    })
+    if notify:
+        send_connection_event('import_list_synced', {
+            'title': 'Import list synced',
+            'message': message,
+            'provider': provider_name,
+            'items_synced': synced
+        })
     return {
         'id': id,
         'name': provider_name,
@@ -1074,6 +1168,15 @@ def sync_import_list(id: int) -> Dict[str, Any]:
         'items_synced': synced,
         'message': message
     }
+
+
+def sync_enabled_import_lists(notify: bool = True) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    for provider in get_providers('importlists'):
+        if not provider.get('enabled'):
+            continue
+        results.append(sync_import_list(provider['id'], notify=notify))
+    return results
 
 
 # region Story arcs

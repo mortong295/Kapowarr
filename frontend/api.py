@@ -37,6 +37,7 @@ from backend.implementations.arr_features import (comicinfo_xml,
                                                   get_profile, get_profiles,
                                                   get_provider,
                                                   get_providers,
+                                                  get_calendar_pull_list,
                                                   get_pull_list,
                                                   get_story_arc,
                                                   get_story_arc_missing,
@@ -46,6 +47,7 @@ from backend.implementations.arr_features import (comicinfo_xml,
                                                   save_pull_list_item,
                                                   save_story_arc,
                                                   series_json,
+                                                  sync_enabled_import_lists,
                                                   sync_import_list,
                                                   test_provider,
                                                   write_comicinfo_xml,
@@ -746,20 +748,20 @@ def _arr_feature_cards(feature: str) -> List[Dict[str, Any]]:
         "connections": [
             {
                 "name": "Webhook",
-                "status": "planned",
+                "status": "available",
                 "description": (
                     "Notify other tools when comics are grabbed, "
                     "imported, failed, or updated."
                 )
             },
             {
-                "name": "Discord/Apprise/Gotify",
-                "status": "planned",
+                "name": "Discord/Gotify",
+                "status": "available",
                 "description": "Send user-facing grab/import/failure notifications."
             },
             {
-                "name": "Plex/Jellyfin/Kodi",
-                "status": "planned",
+                "name": "Plex/Jellyfin",
+                "status": "available",
                 "description": (
                     "Refresh library applications after Kapowarr "
                     "imports or retags files."
@@ -777,7 +779,7 @@ def _arr_feature_cards(feature: str) -> List[Dict[str, Any]]:
             },
             {
                 "name": "Pull Lists",
-                "status": "planned",
+                "status": "available",
                 "description": (
                     "Surface weekly releases and let monitored volumes "
                     "grab matching upcoming issues."
@@ -891,14 +893,30 @@ def api_calendar():
     if days < 1 or days > 366:
         raise InvalidKeyValue('days', days)
 
+    sync_pull_list = str(
+        request.values.get('sync_pull_list', '1')
+    ).lower() not in ('0', 'false', 'no')
+    synced = (
+        sync_enabled_import_lists(notify=False)
+        if sync_pull_list else
+        []
+    )
+    enabled_import_lists = [
+        provider
+        for provider in get_providers('importlists')
+        if provider.get('enabled')
+    ]
+
     return return_api({
         'items': _calendar_issues(days),
-        'pull_list_items': get_pull_list(),
+        'pull_list_items': get_calendar_pull_list(days),
         'pull_list': {
-            'status': 'planned',
+            'status': 'available',
+            'sync_on_load': sync_pull_list,
+            'enabled_providers': len(enabled_import_lists),
+            'synced_providers': synced,
             'description': (
-                'Weekly comic pull-list providers will populate this '
-                'calendar in a later milestone.'
+                'Weekly pull-list providers are synced into this calendar.'
             )
         }
     })
