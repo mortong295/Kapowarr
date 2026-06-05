@@ -1,5 +1,17 @@
 async function usingApiKey(redirect=true) {
-	const key_data = JSON.parse(localStorage.getItem('kapowarr'));
+	let key_data;
+	try {
+		key_data = JSON.parse(localStorage.getItem('kapowarr') || '{}');
+	} catch {
+		key_data = {};
+	};
+
+	if (!('api_key' in key_data))
+		key_data.api_key = null;
+	if (!('last_login' in key_data))
+		key_data.last_login = 0;
+	if (key_data.last_login > 9999999999)
+		key_data.last_login = key_data.last_login / 1000;
 
 	if (key_data.api_key === null
 	|| (key_data.last_login < (Date.now() / 1000 - 86400))) {
@@ -33,4 +45,3 @@ async function usingApiKey(redirect=true) {
 		return key_data.api_key;
 	};
 };
-

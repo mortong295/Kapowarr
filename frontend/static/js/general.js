@@ -344,6 +344,9 @@ function setLocalStorage(keys_values) {
 const url_base = document.querySelector('#url_base').dataset.value;
 const volume_id = parseInt(window.location.pathname.split('/').at(-1)) || null;
 mapButtons(volume_id);
+setupLocalStorage();
+if (getLocalStorage('theme')['theme'] === 'dark')
+	document.querySelector(':root').classList.add('dark-mode');
 
 let socket;
 usingApiKey()
@@ -351,10 +354,6 @@ usingApiKey()
 	setTimeout(() => fillTaskQueue(api_key), 200);
 	socket = connectToWebSocket(api_key);
 });
-
-setupLocalStorage();
-if (getLocalStorage('theme')['theme'] === 'dark')
-	document.querySelector(':root').classList.add('dark-mode');
 
 document.querySelector('#toggle-nav').onclick = e =>
 	document.querySelector('#nav-bar').classList.toggle('show-nav');

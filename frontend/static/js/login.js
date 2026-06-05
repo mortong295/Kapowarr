@@ -7,6 +7,8 @@ function loadFields() {
 			document.querySelector("#username-input").remove();
 			document.querySelector("#login-form").classList.remove('hidden');
 			document.querySelector("#password-input").focus();
+		} else if (am == 0) {
+			login();
 		} else {
 			document.querySelector("#login-form").classList.remove('hidden');
 		};
@@ -47,9 +49,9 @@ function login() {
 };
 
 function registerLogin(api_key) {
-	const data = JSON.parse(localStorage.getItem('kapowarr'));
+	const data = JSON.parse(localStorage.getItem('kapowarr') || '{}');
 	data.api_key = api_key;
-	data.last_login = Date.now();
+	data.last_login = Date.now() / 1000;
 	localStorage.setItem('kapowarr', JSON.stringify(data));
 	redirect();
 };
@@ -72,7 +74,7 @@ usingApiKey(false)
 		loadFields();
 })
 
-if (JSON.parse(localStorage.getItem('kapowarr') || {'theme': 'light'})['theme'] === 'dark')
+if (JSON.parse(localStorage.getItem('kapowarr') || '{"theme": "light"}')['theme'] === 'dark')
 	document.querySelector(':root').classList.add('dark-mode');
 
 document.querySelector('#login-form').action = 'javascript:login();';
