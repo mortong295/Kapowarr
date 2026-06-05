@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import gather, run
+from json import loads
 from urllib.parse import parse_qs, urljoin, urlparse
 from xml.etree import ElementTree
 from typing import Any, Dict, List, Mapping, Tuple, Union
@@ -17,7 +18,8 @@ from backend.base.helpers import (AsyncSession, check_overlapping_issues,
                                   extract_year_from_date, force_range,
                                   normalise_query_string)
 from backend.base.logging import LOGGER
-from backend.implementations.external_indexers import search_external_indexers
+from backend.implementations.external_indexers import (ProwlarrIndexer,
+                                                       search_external_indexers)
 from backend.implementations.getcomics import search_getcomics
 from backend.implementations.matching import check_search_result_match
 from backend.implementations.volumes import Volume
@@ -454,6 +456,41 @@ async def _search_newznab_indexer(
     ]
 
 
+async def _search_prowlarr_indexer(
+    session: AsyncSession,
+    query: str,
+    indexer: Mapping[str, Any]
+) -> List[SearchResultData]:
+    settings = _normalise_indexer_settings(indexer)
+    base_url = settings.get('base_url') or settings.get('url')
+    api_key = settings.get('api_key') or settings.get('apikey')
+    if not isinstance(base_url, str) or not base_url.strip():
+        return []
+    if not isinstance(api_key, str) or not api_key.strip():
+        return []
+
+    params: Dict[str, Any] = {'query': query, 'type': 'search'}
+    if settings.get('categories'):
+        params['categories'] = str(settings['categories'])
+
+    response_text = await session.get_text(
+        f"{base_url.rstrip('/')}/api/v1/search",
+        params=params,
+        headers={'X-Api-Key': api_key.strip()},
+        quiet_fail=True
+    )
+    try:
+        payload = loads(response_text)
+    except ValueError:
+        return []
+    if not isinstance(payload, list):
+        return []
+    return ProwlarrIndexer._format_results(
+        payload,
+        str(indexer.get('name') or 'Prowlarr')
+    )
+
+
 async def _search_indexer(
     session: AsyncSession,
     query: str,
@@ -471,6 +508,9 @@ async def _search_indexer(
 
     if implementation in ('newznab', 'torznab'):
         return await _search_newznab_indexer(session, query, indexer)
+
+    if implementation == 'prowlarr':
+        return await _search_prowlarr_indexer(session, query, indexer)
 
     return []
 

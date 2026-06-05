@@ -12,7 +12,7 @@ from re import IGNORECASE, compile
 from threading import Event, Thread
 from time import perf_counter
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Type, Union, final
-from urllib.parse import unquote_plus
+from urllib.parse import unquote_plus, urlparse
 
 from bs4 import BeautifulSoup, Tag
 from requests import RequestException, Response
@@ -850,23 +850,31 @@ class TorrentDownload(ExternalDownload, BaseDirectDownload):
             if not forced_match:
                 raise e
 
-        # Find name of torrent as that becomes folder that media is
-        # downloaded in
-        try:
-            response = Session().post(
-                'https://magnet2torrent.com/upload/',
-                data={'magnet': download_link}
+        if download_link.lower().startswith('magnet:'):
+            # Find name of torrent as that becomes folder that media is
+            # downloaded in
+            try:
+                response = Session().post(
+                    'https://magnet2torrent.com/upload/',
+                    data={'magnet': download_link}
+                )
+                response.raise_for_status()
+                if response.headers.get(
+                    'Content-Type'
+                ) != 'application/x-bittorrent':
+                    raise RequestException
+
+            except RequestException:
+                raise LinkBroken(self.download_link)
+
+            torrent_name = get_torrent_info(response.content)[b'name'].decode()
+        else:
+            torrent_name = (
+                web_title
+                or unquote_plus(basename(urlparse(download_link).path))
+                or basename(download_link)
+                or 'Kapowarr Torrent'
             )
-            response.raise_for_status()
-            if response.headers.get(
-                'Content-Type'
-            ) != 'application/x-bittorrent':
-                raise RequestException
-
-        except RequestException:
-            raise LinkBroken(self.download_link)
-
-        torrent_name = get_torrent_info(response.content)[b'name'].decode()
 
         self._filename_body = ''
         if settings.rename_downloaded_files:

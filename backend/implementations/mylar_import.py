@@ -3,6 +3,13 @@
 from json import loads
 from typing import Any, Dict, Iterable, List, Mapping, Union
 
+from backend.base.custom_exceptions import KapowarrException, VolumeAlreadyAdded
+from backend.base.definitions import MonitorScheme
+from backend.implementations.arr_features import (get_default_profile_id,
+                                                  save_pull_list_item,
+                                                  save_story_arc)
+from backend.implementations.volumes import Library
+
 
 def _as_mapping(data: Any) -> Mapping[str, Any]:
     return data if isinstance(data, dict) else {}
@@ -205,3 +212,138 @@ def parse_mylar_export(
         },
         'warnings': warnings
     }
+
+
+def _apply_bool_option(
+    options: Mapping[str, Any],
+    key: str,
+    default: bool
+) -> bool:
+    value = options.get(key)
+    return value if isinstance(value, bool) else default
+
+
+def apply_mylar_export(
+    data: Union[str, Mapping[str, Any], List[Any]],
+    options: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Apply a parsed Mylar export to Kapowarr.
+
+    Volumes are only added when a ComicVine ID is available, because Kapowarr's
+    authoritative volume creation path is ComicVine-backed. Pull-list and story
+    arc rows are imported through the existing ARR feature helpers so matching,
+    monitoring and validation remain consistent with manual entry.
+    """
+    parsed = parse_mylar_export(data)
+    root_folder_id = _to_int(options.get('root_folder_id'))
+    quality_profile_id = (
+        _to_int(options.get('quality_profile_id'))
+        or get_default_profile_id()
+    )
+    monitor = _apply_bool_option(options, 'monitor', True)
+    monitor_new_issues = _apply_bool_option(options, 'monitor_new_issues', True)
+    auto_search = _apply_bool_option(options, 'auto_search', False)
+    add_volumes = _apply_bool_option(options, 'add_volumes', True)
+    import_pull_list = _apply_bool_option(options, 'import_pull_list', True)
+    import_story_arcs = _apply_bool_option(options, 'import_story_arcs', True)
+    use_custom_folders = _apply_bool_option(options, 'use_custom_folders', False)
+    provider_name = str(options.get('provider') or 'Mylar Migration').strip()
+
+    try:
+        monitor_scheme = MonitorScheme(
+            options.get('monitoring_scheme') or MonitorScheme.ALL.value
+        )
+    except ValueError:
+        monitor_scheme = MonitorScheme.ALL
+
+    results: Dict[str, Any] = {
+        'preview': parsed,
+        'summary': {
+            'volumes_added': 0,
+            'volumes_existing': 0,
+            'volumes_skipped': 0,
+            'pull_list_items': 0,
+            'story_arcs': 0,
+            'errors': 0
+        },
+        'volumes': [],
+        'pull_list': [],
+        'story_arcs': [],
+        'errors': []
+    }
+
+    for volume in parsed['volumes']:
+        if not add_volumes:
+            results['summary']['volumes_skipped'] += 1
+            continue
+        if not volume.get('comicvine_id'):
+            results['summary']['volumes_skipped'] += 1
+            results['errors'].append({
+                'type': 'volume',
+                'title': volume.get('title'),
+                'message': 'Skipped volume without a ComicVine ID.'
+            })
+            continue
+        if root_folder_id is None:
+            results['summary']['volumes_skipped'] += 1
+            results['errors'].append({
+                'type': 'volume',
+                'title': volume.get('title'),
+                'comicvine_id': volume.get('comicvine_id'),
+                'message': 'Skipped volume because root_folder_id was not set.'
+            })
+            continue
+
+        try:
+            volume_id = Library.add(
+                volume['comicvine_id'],
+                root_folder_id,
+                bool(volume.get('monitored', monitor)),
+                monitor_scheme,
+                bool(volume.get('monitor_new_issues', monitor_new_issues)),
+                volume.get('folder') if use_custom_folders else None,
+                None,
+                auto_search,
+                quality_profile_id
+            )
+        except VolumeAlreadyAdded as e:
+            results['summary']['volumes_existing'] += 1
+            results['volumes'].append({
+                'status': 'existing',
+                'comicvine_id': volume.get('comicvine_id'),
+                'volume_id': e.volume_id,
+                'title': volume.get('title')
+            })
+        except KapowarrException as e:
+            results['summary']['errors'] += 1
+            results['errors'].append({
+                'type': 'volume',
+                'title': volume.get('title'),
+                'comicvine_id': volume.get('comicvine_id'),
+                'message': str(e)
+            })
+        else:
+            results['summary']['volumes_added'] += 1
+            results['volumes'].append({
+                'status': 'added',
+                'comicvine_id': volume.get('comicvine_id'),
+                'volume_id': volume_id,
+                'title': volume.get('title')
+            })
+
+    if import_pull_list:
+        for item in parsed['pull_list']:
+            saved = save_pull_list_item({
+                **item,
+                'provider': provider_name
+            })
+            results['summary']['pull_list_items'] += 1
+            results['pull_list'].append(saved)
+
+    if import_story_arcs:
+        for arc in parsed['story_arcs']:
+            saved = save_story_arc(arc)
+            results['summary']['story_arcs'] += 1
+            results['story_arcs'].append(saved)
+
+    return results

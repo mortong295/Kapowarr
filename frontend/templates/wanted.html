@@ -16,6 +16,7 @@
 			<button id="search-wanted-button" type="button">Search Missing</button>
 			<button id="search-cutoff-button" type="button">Search Cutoff Unmet</button>
 			<button id="search-story-arcs-button" type="button">Search Story Arcs</button>
+			<button id="search-selected-button" type="button">Search Selected</button>
 		</div>
 	</section>
 	<div class="arr-page">
@@ -34,15 +35,23 @@
 			<table class="arr-table">
 				<thead>
 					<tr>
+						<th><input id="wanted-select-all" type="checkbox" title="Select all missing issues"></th>
 						<th>Volume</th>
 						<th>Issue</th>
 						<th>Release Date</th>
 						<th>Publisher</th>
 						<th>Profile</th>
+						<th>Decision</th>
+						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody id="wanted-items"></tbody>
 			</table>
+			<div class="arr-pager">
+				<button id="wanted-prev-button" type="button">Previous</button>
+				<span id="wanted-page-label"></span>
+				<button id="wanted-next-button" type="button">Next</button>
+			</div>
 			<p id="wanted-empty" class="arr-empty-state hidden">No missing monitored issues were found.</p>
 		</section>
 
@@ -54,15 +63,23 @@
 			<table class="arr-table">
 				<thead>
 					<tr>
+						<th><input id="wanted-cutoff-select-all" type="checkbox" title="Select all cutoff-unmet issues"></th>
 						<th>Volume</th>
 						<th>Issue</th>
 						<th>Current</th>
 						<th>Cutoff</th>
 						<th>Profile</th>
+						<th>Decision</th>
+						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody id="wanted-cutoff-items"></tbody>
 			</table>
+			<div class="arr-pager">
+				<button id="wanted-cutoff-prev-button" type="button">Previous</button>
+				<span id="wanted-cutoff-page-label"></span>
+				<button id="wanted-cutoff-next-button" type="button">Next</button>
+			</div>
 			<p id="wanted-cutoff-empty" class="arr-empty-state hidden">No downloaded issues are below their quality cutoff.</p>
 		</section>
 
@@ -78,6 +95,7 @@
 						<th>Order</th>
 						<th>Issue</th>
 						<th>Volume</th>
+						<th>Actions</th>
 					</tr>
 				</thead>
 				<tbody id="wanted-arc-items"></tbody>

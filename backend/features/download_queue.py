@@ -571,10 +571,6 @@ class DownloadHandler(metaclass=Singleton):
             )]
 
         elif link_type == 'torrent':
-            if not link.lower().startswith('magnet:'):
-                LOGGER.warning('Unsupported non-magnet torrent link: %s', link)
-                return [], EnqueuingDownloadFailureReason.UNSUPPORTED_LINK
-
             covered_issues = (
                 Issue(issue_id, check_existence=True)
                 .get_data()

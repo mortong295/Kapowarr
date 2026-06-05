@@ -22,6 +22,34 @@ function addStoryArcCard(arc) {
 	document.querySelector('#story-arc-cards').appendChild(card);
 };
 
+function addComicVineStoryArcResult(arc, api_key) {
+	const card = document.createElement('article');
+	card.className = 'arr-card';
+	card.innerHTML = `
+		<h2></h2>
+		<p class="arr-status"></p>
+		<p></p>
+		<div class="arr-card-actions"></div>
+	`;
+	card.querySelector('h2').innerText = arc.title;
+	card.querySelector('.arr-status').innerText = `${arc.issues.length} issue(s)`;
+	card.querySelector('p').innerText = arc.description || arc.site_url || 'ComicVine story arc';
+	const button = document.createElement('button');
+	button.type = 'button';
+	button.innerText = 'Import';
+	button.onclick = () => {
+		button.disabled = true;
+		button.innerText = 'Importing...';
+		sendAPI('POST', `/comicvine/storyarcs/${arc.comicvine_id}/import`, api_key)
+			.then(() => {
+				button.innerText = 'Imported';
+				loadStoryArcs(api_key);
+			});
+	};
+	card.querySelector('.arr-card-actions').appendChild(button);
+	document.querySelector('#story-arc-import-results').appendChild(card);
+};
+
 function parseIssueLines(raw) {
 	return raw.split('\n')
 		.map(line => line.trim())
@@ -53,6 +81,20 @@ function loadStoryArcs(api_key) {
 };
 
 usingApiKey().then(api_key => {
+	const importForm = document.querySelector('#story-arc-import-form');
+	importForm.onsubmit = event => {
+		event.preventDefault();
+		const results = document.querySelector('#story-arc-import-results');
+		results.innerHTML = '';
+		const query = document.querySelector('#story-arc-import-query').value;
+		fetchAPI('/comicvine/storyarcs/search', api_key, {query: query})
+			.then(json => {
+				document.querySelector('#story-arc-import-summary').innerText =
+					`${json.result.length} ComicVine story arc result(s)`;
+				json.result.forEach(arc => addComicVineStoryArcResult(arc, api_key));
+			});
+	};
+
 	const form = document.querySelector('#story-arc-form');
 	form.onsubmit = event => {
 		event.preventDefault();

@@ -46,6 +46,22 @@ headers = {'h2', 'h3', 'h4', 'h5', 'h6'}
 lists = {'ul', 'ol'}
 
 
+def _to_full_resource_id(value: Union[str, int], prefix: str) -> str:
+    text = str(value).strip()
+    if not text:
+        raise VolumeNotMatched
+    if text.startswith(f'{prefix}-'):
+        return text
+    if text.startswith('cv:'):
+        text = text[3:]
+    if '-' in text:
+        text = text.split('-', 1)[1]
+    try:
+        return f'{prefix}-{int(text)}'
+    except ValueError:
+        raise VolumeNotMatched
+
+
 def _clean_description(description: str, short: bool = False) -> str:
     """Reduce the size of the volume/issue description (written in html) to only
     essential information. Removes images, lists (e.g. of authors), and fixes
@@ -165,6 +181,14 @@ class ComicVine:
         'publisher',
         'site_detail_url',
         'start_year'
+    ))
+    story_arc_field_list = ','.join((
+        'deck',
+        'description',
+        'id',
+        'issues',
+        'name',
+        'site_detail_url'
     ))
 
     def __init__(self, comicvine_api_key: Union[str, None] = None) -> None:
@@ -624,6 +648,80 @@ class ComicVine:
                             ))
 
             return issue_infos
+
+    def _format_story_arc_output(
+        self,
+        story_arc_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        issues = []
+        for index, issue in enumerate(story_arc_data.get('issues') or [], 1):
+            volume = issue.get('volume') or {}
+            issues.append({
+                'reading_order': index,
+                'series': volume.get('name') or '',
+                'issue_number': str(issue.get('issue_number') or '').strip(),
+                'title': normalise_string(issue.get('name') or ''),
+                'comicvine_issue_id': issue.get('id')
+            })
+
+        return {
+            'comicvine_id': int(story_arc_data['id']),
+            'title': normalise_string(story_arc_data.get('name') or ''),
+            'description': _clean_description(
+                story_arc_data.get('description')
+                or story_arc_data.get('deck')
+                or ''
+            ),
+            'site_url': story_arc_data.get('site_detail_url') or '',
+            'issues': issues
+        }
+
+    async def fetch_story_arc(
+        self,
+        cv_id: Union[str, int]
+    ) -> Dict[str, Any]:
+        """Get a ComicVine story arc with its issue list."""
+        story_arc_id = _to_full_resource_id(cv_id, '4045')
+        async with AsyncSession() as session:
+            result = await self.__call_api(
+                session,
+                f'/story_arc/{story_arc_id}',
+                {'field_list': self.story_arc_field_list}
+            )
+            return self._format_story_arc_output(result['results'])
+
+    async def search_story_arcs(
+        self,
+        query: str,
+        allow_rate_limit_reached: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Search ComicVine story arcs."""
+        try:
+            if query.startswith(('4045-', 'cv:')):
+                results = [await self.fetch_story_arc(query)]
+            else:
+                async with AsyncSession() as session:
+                    response = await self.__call_api(
+                        session,
+                        '/search',
+                        {
+                            'query': query,
+                            'resources': 'story_arc',
+                            'limit': 25,
+                            'field_list': self.story_arc_field_list
+                        },
+                        {'results': []}
+                    )
+                    results = [
+                        self._format_story_arc_output(result)
+                        for result in response['results']
+                    ]
+        except (CVRateLimitReached, VolumeNotMatched):
+            if allow_rate_limit_reached:
+                return []
+            raise
+
+        return results
 
     async def __search_volume(
         self, query: str

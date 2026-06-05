@@ -3,6 +3,7 @@
 from re import IGNORECASE, compile
 from time import time
 from typing import Any, Dict, List, Union
+from uuid import uuid4
 
 from requests.exceptions import RequestException
 
@@ -154,26 +155,69 @@ class qBittorrent(BaseExternalClient):
             'savepath': (None, target_folder),
             'category': (None, Constants.TORRENT_TAG)
         }
+        tracking_tag = None
+        if 'urn:btih:' not in download_link:
+            tracking_tag = f'{Constants.TORRENT_TAG}-{uuid4().hex}'
+            files['tags'] = (None, tracking_tag)
 
         if not self.ssn:
             self.ssn = self._login(self.base_url, self.username, self.password)
 
+        before_hashes = self._current_hashes()
         self.ssn.post(
             f'{self.base_url}/api/v2/torrents/add',
             files=files
         )
-        t_hash = download_link.split('urn:btih:')[1].split('&')[0]
+
+        if 'urn:btih:' in download_link:
+            t_hash = download_link.split('urn:btih:')[1].split('&')[0]
+        else:
+            new_hashes = self._current_hashes() - before_hashes
+            t_hash = next(
+                iter(new_hashes),
+                f'tag:{tracking_tag}' if tracking_tag else download_link
+            )
         self.torrent_hashes[t_hash] = None
         return t_hash
+
+    def _current_torrents(self, **params: Any) -> List[Dict[str, Any]]:
+        if not self.ssn:
+            return []
+        query = {'category': Constants.TORRENT_TAG}
+        query.update({
+            key: value
+            for key, value in params.items()
+            if value is not None
+        })
+        try:
+            torrents = self.ssn.get(
+                f'{self.base_url}/api/v2/torrents/info',
+                params=query
+            ).json()
+        except RequestException:
+            return []
+        if not isinstance(torrents, list):
+            return []
+        return torrents
+
+    def _current_hashes(self) -> set:
+        return {
+            torrent.get('hash')
+            for torrent in self._current_torrents()
+            if torrent.get('hash')
+        }
 
     def get_download(self, download_id: str) -> Union[dict, None]:
         if not self.ssn:
             self.ssn = self._login(self.base_url, self.username, self.password)
 
-        r: List[Dict[str, Any]] = self.ssn.get(
-            f'{self.base_url}/api/v2/torrents/info',
-            params={'hashes': download_id}
-        ).json()
+        if download_id.startswith('tag:'):
+            r = self._current_torrents(tag=download_id[4:])
+        else:
+            r: List[Dict[str, Any]] = self.ssn.get(
+                f'{self.base_url}/api/v2/torrents/info',
+                params={'hashes': download_id}
+            ).json()
         if not r:
             if download_id in self.torrent_hashes:
                 return None
@@ -213,14 +257,26 @@ class qBittorrent(BaseExternalClient):
         if not self.ssn:
             self.ssn = self._login(self.base_url, self.username, self.password)
 
+        if download_id.startswith('tag:'):
+            hashes = '|'.join(
+                torrent.get('hash')
+                for torrent in self._current_torrents(tag=download_id[4:])
+                if torrent.get('hash')
+            )
+            if not hashes:
+                self.torrent_hashes.pop(download_id, None)
+                return
+        else:
+            hashes = download_id
+
         self.ssn.post(
             f'{self.base_url}/api/v2/torrents/delete',
             data={
-                'hashes': download_id,
+                'hashes': hashes,
                 'deleteFiles': delete_files
             }
         )
-        del self.torrent_hashes[download_id]
+        self.torrent_hashes.pop(download_id, None)
         return
 
     @staticmethod

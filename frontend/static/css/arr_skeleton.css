@@ -114,6 +114,14 @@
 	text-align: center;
 }
 
+.arr-pager {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: .75rem;
+	padding: .75rem 1rem;
+}
+
 @media (max-width: 720px) {
 	.arr-header,
 	.arr-panel-header {
@@ -181,6 +189,10 @@
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 	gap: 1rem;
+}
+
+.arr-schema-fields {
+	display: contents;
 }
 
 .arr-form-actions,

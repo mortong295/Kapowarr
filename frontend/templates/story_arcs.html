@@ -22,6 +22,21 @@
 
 		<section class="arr-panel arr-section-gap">
 			<div class="arr-panel-header">
+				<h2>Import From ComicVine</h2>
+				<p id="story-arc-import-summary">Search by title or paste a ComicVine story arc ID.</p>
+			</div>
+			<form id="story-arc-import-form" class="arr-form">
+				<label>
+					<span>ComicVine Story Arc</span>
+					<input id="story-arc-import-query" type="text" required>
+				</label>
+				<button type="submit">Search ComicVine</button>
+			</form>
+			<section id="story-arc-import-results" class="arr-grid arr-section-gap"></section>
+		</section>
+
+		<section class="arr-panel arr-section-gap">
+			<div class="arr-panel-header">
 				<h2>Add Story Arc</h2>
 				<p>Enter issues as one per line: Series, Issue Number, Optional Title.</p>
 			</div>

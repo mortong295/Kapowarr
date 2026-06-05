@@ -9,6 +9,7 @@ metadata writers and notification senders can build on these tables over time.
 
 from __future__ import annotations
 
+from asyncio import run
 from csv import DictReader
 from io import StringIO
 from json import dumps, loads
@@ -22,6 +23,7 @@ from requests import RequestException
 from backend.base.custom_exceptions import InvalidKeyValue, KeyNotFound
 from backend.base.files import create_folder
 from backend.base.helpers import Session
+from backend.implementations.comicvine import ComicVine
 from backend.implementations.volumes import Library
 from backend.internals.db import get_db
 
@@ -281,6 +283,7 @@ def _cutoff_score(profile: Mapping[str, Any]) -> int:
 
 def get_cutoff_unmet_issues(
     limit: int = 200,
+    offset: int = 0,
     quality_profile_id: Union[int, None] = None
 ) -> List[Dict[str, Any]]:
     """Return downloaded monitored issues below their profile cutoff."""
@@ -360,6 +363,9 @@ def get_cutoff_unmet_issues(
             'cutoff_score': cutoff_cache[profile_id],
             'file_id': row['file_id'],
             'filepath': row['filepath'],
+            'decision': (
+                'Downloaded file is below the configured quality cutoff.'
+            ),
             **quality
         }
 
@@ -378,7 +384,7 @@ def get_cutoff_unmet_issues(
         str(i['issue_number']),
         -int(i.get('cutoff_score') or 0) + int(i.get('quality_score') or 0)
     ))
-    return unmet[:limit]
+    return unmet[offset:offset + limit]
 
 
 # region Provider-backed settings
@@ -560,7 +566,7 @@ def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
 
     supported = {
         'indexers': {
-            'getcomics', 'newznab', 'torznab', 'rawrss'
+            'getcomics', 'newznab', 'torznab', 'prowlarr', 'rawrss'
         },
         'connections': {
             'webhook', 'discord', 'gotify', 'plex', 'jellyfin'
@@ -1154,6 +1160,77 @@ def _fetch_import_list_body(url: Any) -> str:
         return ''
 
 
+def _settings_list(settings: Mapping[str, Any], *keys: str) -> List[Any]:
+    for key in keys:
+        value = settings.get(key)
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str) and value.strip():
+            return [
+                part.strip()
+                for part in value.replace('\n', ',').split(',')
+                if part.strip()
+            ]
+    return []
+
+
+def _pull_items_from_comicvine(settings: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    cv = ComicVine(settings.get('api_key') or None)
+
+    story_arc_ids = _settings_list(
+        settings,
+        'story_arc_ids',
+        'story_arcs',
+        'story_arc_id'
+    )
+    for story_arc_id in story_arc_ids:
+        try:
+            arc = run(cv.fetch_story_arc(story_arc_id))
+        except Exception:
+            continue
+        items.extend({
+            **issue,
+            'publisher': settings.get('publisher') or '',
+            'release_date': issue.get('release_date') or '',
+            'status': issue.get('status') or 'pending'
+        } for issue in arc.get('issues', []))
+
+    volume_ids = _settings_list(
+        settings,
+        'volume_ids',
+        'volumes',
+        'comicvine_ids'
+    )
+    if volume_ids:
+        try:
+            volumes = run(cv.fetch_volumes(volume_ids))
+            issues = run(cv.fetch_issues(volume_ids))
+        except Exception:
+            return items
+
+        volume_map = {
+            volume['comicvine_id']: volume
+            for volume in volumes
+        }
+        for issue in issues:
+            volume = volume_map.get(issue['volume_id']) or {}
+            items.append({
+                'release_date': issue.get('date') or '',
+                'publisher': volume.get('publisher') or '',
+                'series': volume.get('title') or '',
+                'issue_number': issue.get('issue_number') or '',
+                'title': issue.get('title') or '',
+                'status': 'pending'
+            })
+
+    return [
+        item
+        for item in items
+        if str(item.get('series') or '').strip()
+    ]
+
+
 def _load_import_list_items(provider: Mapping[str, Any]) -> List[Dict[str, Any]]:
     implementation = str(provider.get('implementation') or '').lower()
     settings = provider.get('settings') or {}
@@ -1180,6 +1257,11 @@ def _load_import_list_items(provider: Mapping[str, Any]) -> List[Dict[str, Any]]
         if content_type == 'csv':
             return _pull_items_from_csv(body)
         return _pull_items_from_rss(body)
+    if implementation == 'comicvine':
+        comicvine_items = _pull_items_from_comicvine(settings)
+        if comicvine_items:
+            return comicvine_items
+        return _pull_items_from_json(body)
 
     return []
 

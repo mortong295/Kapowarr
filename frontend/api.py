@@ -66,7 +66,8 @@ from backend.implementations.external_clients import ExternalClients
 from backend.implementations.external_indexers import ExternalIndexers
 from backend.implementations.file_matching import (get_file_matching,
                                                    set_file_matching)
-from backend.implementations.mylar_import import parse_mylar_export
+from backend.implementations.mylar_import import (apply_mylar_export,
+                                                  parse_mylar_export)
 from backend.implementations.naming import (generate_volume_folder_name,
                                             preview_mass_rename)
 from backend.implementations.remote_mapping import RemoteMappings
@@ -937,6 +938,7 @@ def _arr_feature_cards(feature: str) -> List[Dict[str, Any]]:
 
 def _missing_issues(
     limit: int = 200,
+    offset: int = 0,
     quality_profile_id: Union[int, None] = None
 ) -> List[Dict[str, Any]]:
     profile_filter = ''
@@ -945,7 +947,7 @@ def _missing_issues(
         profile_filter = 'AND v.quality_profile_id = ?'
         params.append(quality_profile_id)
 
-    params.append(limit)
+    params.extend((limit, offset))
     return get_db().execute(f"""
         SELECT
             i.id AS issue_id,
@@ -960,7 +962,8 @@ def _missing_issues(
             v.volume_number,
             v.monitored AS volume_monitored,
             v.quality_profile_id,
-            aqp.name AS quality_profile_name
+            aqp.name AS quality_profile_name,
+            'Missing monitored issue has no matched file.' AS decision
         FROM issues i
         INNER JOIN volumes v
             ON i.volume_id = v.id
@@ -979,7 +982,7 @@ def _missing_issues(
             i.date,
             v.title,
             i.calculated_issue_number
-        LIMIT ?;
+        LIMIT ? OFFSET ?;
         """,
         tuple(params)
     ).fetchalldict()
@@ -1068,12 +1071,18 @@ def api_wanted_missing():
         'quality_profile_id',
         False
     )
+    limit = extract_key(request, 'limit', False) or 50
+    offset = extract_key(request, 'offset', False) or 0
     return return_api({
         'items': _missing_issues(
+            limit=limit,
+            offset=offset,
             quality_profile_id=quality_profile_id
         ),
         'cutoff_unmet': {
             'items': get_cutoff_unmet_issues(
+                limit=limit,
+                offset=offset,
                 quality_profile_id=quality_profile_id
             )
         }
@@ -1089,8 +1098,12 @@ def api_wanted_cutoff_unmet():
         'quality_profile_id',
         False
     )
+    limit = extract_key(request, 'limit', False) or 50
+    offset = extract_key(request, 'offset', False) or 0
     return return_api({
         'items': get_cutoff_unmet_issues(
+            limit=limit,
+            offset=offset,
             quality_profile_id=quality_profile_id
         )
     })
@@ -1225,6 +1238,20 @@ def api_mylar_import_preview():
     return return_api(parse_mylar_export(data or {}))
 
 
+@api.route('/importlists/mylar/apply', methods=['POST'])
+@error_handler
+@auth
+def api_mylar_import_apply():
+    payload = request.get_json()
+    if not isinstance(payload, dict):
+        raise InvalidKeyValue('body', payload)
+    data = payload.get('export', payload)
+    options = payload.get('options') if 'export' in payload else payload
+    if not isinstance(options, dict):
+        raise InvalidKeyValue('options', options)
+    return return_api(apply_mylar_export(data or {}, options), code=201)
+
+
 @api.route('/pulllist', methods=['GET', 'POST'])
 @error_handler
 @auth
@@ -1275,6 +1302,29 @@ def api_story_arc(id: int):
     elif request.method == 'DELETE':
         delete_story_arc(id)
         return return_api({})
+
+
+@api.route('/comicvine/storyarcs/search', methods=['GET'])
+@error_handler
+@auth
+def api_comicvine_story_arc_search():
+    query = extract_key(request, 'query')
+    return return_api(run(ComicVine().search_story_arcs(query)))
+
+
+@api.route('/comicvine/storyarcs/<int:id>/import', methods=['POST'])
+@error_handler
+@auth
+def api_comicvine_story_arc_import(id: int):
+    story_arc = run(ComicVine().fetch_story_arc(id))
+    payload = {
+        'title': story_arc['title'],
+        'description': story_arc.get('description') or '',
+        'comicvine_id': story_arc.get('comicvine_id'),
+        'monitored': True,
+        'issues': story_arc.get('issues') or []
+    }
+    return return_api(save_story_arc(payload), code=201)
 
 
 @api.route('/volumes/<int:id>/metadata', methods=['POST'])
@@ -2162,27 +2212,69 @@ def _mask_indexer_key(indexer_data: Dict[str, Any]) -> Dict[str, Any]:
     return indexer_data
 
 
+def _provider_indexer_to_legacy(provider: Dict[str, Any]) -> Dict[str, Any]:
+    settings = provider.get('settings') or {}
+    if not isinstance(settings, dict):
+        settings = {}
+    implementation = str(provider.get('implementation') or '').lower()
+    return _mask_indexer_key({
+        'id': provider.get('id'),
+        'indexer_type': {
+            'newznab': 'Newznab',
+            'torznab': 'Torznab',
+            'prowlarr': 'Prowlarr'
+        }.get(implementation, implementation.title()),
+        'title': provider.get('name'),
+        'base_url': settings.get('base_url') or settings.get('url') or '',
+        'api_key': settings.get('api_key') or '',
+        'enabled': provider.get('enabled'),
+        'categories': settings.get('categories'),
+        'provider_registry': True
+    })
+
+
+def _legacy_indexer_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    indexer_type = str(data.get('indexer_type') or '').lower()
+    implementation = {
+        'newznab': 'newznab',
+        'torznab': 'torznab',
+        'prowlarr': 'prowlarr'
+    }.get(indexer_type, indexer_type)
+    return {
+        'name': data.get('title') or data.get('name') or implementation.title(),
+        'implementation': implementation,
+        'enabled': data.get('enabled', True),
+        'priority': data.get('priority') or 25,
+        'settings': {
+            'base_url': data.get('base_url') or data.get('url') or '',
+            'api_key': data.get('api_key') or '',
+            'categories': data.get('categories') or ''
+        },
+        'tags': []
+    }
+
+
 @api.route('/externalindexers', methods=['GET', 'POST'])
 @error_handler
 @auth
 def api_external_indexers():
     if request.method == 'GET':
-        return return_api([
+        provider_indexers = [
+            _provider_indexer_to_legacy(provider)
+            for provider in get_providers('indexers')
+            if str(provider.get('implementation') or '').lower()
+            in ('newznab', 'torznab', 'prowlarr')
+        ]
+        legacy_indexers = [
             _mask_indexer_key(indexer_data)
             for indexer_data in ExternalIndexers.get_indexers()
-        ])
+        ]
+        return return_api(provider_indexers + legacy_indexers)
 
     elif request.method == 'POST':
         data: dict = request.get_json()
-        data = {
-            k: data.get(k)
-            for k in (
-                'indexer_type', 'title', 'base_url',
-                'api_key', 'enabled', 'categories'
-            )
-        }
-        result = ExternalIndexers.add(**data).get_indexer_data()
-        return return_api(_mask_indexer_key(result), code=201)
+        provider = save_provider('indexers', _legacy_indexer_payload(data))
+        return return_api(_provider_indexer_to_legacy(provider), code=201)
 
 
 @api.route('/externalindexers/options', methods=['GET'])
@@ -2190,8 +2282,9 @@ def api_external_indexers():
 @auth
 def api_external_indexer_options():
     return return_api({
-        k: v.required_tokens
-        for k, v in ExternalIndexers.get_indexer_types().items()
+        'Newznab': ('title', 'base_url', 'api_key'),
+        'Torznab': ('title', 'base_url', 'api_key'),
+        'Prowlarr': ('title', 'base_url', 'api_key')
     })
 
 
@@ -2212,17 +2305,40 @@ def api_external_indexer_test():
         if data.get('api_key') == Constants.CREDENTIAL_REPLACEMENT:
             data['api_key'] = indexer.api_key
 
-    data = {
-        k: data.get(k)
-        for k in ('indexer_type', 'base_url', 'api_key')
-    }
-    return return_api(ExternalIndexers.test(**data))
+    return return_api(test_provider(
+        'indexers',
+        _legacy_indexer_payload(data)
+    ))
 
 
 @api.route('/externalindexers/<int:id>', methods=['GET', 'PUT', 'DELETE'])
 @error_handler
 @auth
 def api_external_indexer(id: int):
+    try:
+        provider = get_provider('indexers', id)
+    except InvalidKeyValue:
+        provider = None
+
+    if provider is not None:
+        if request.method == 'GET':
+            return return_api(_provider_indexer_to_legacy(provider))
+
+        elif request.method == 'PUT':
+            data = request.get_json()
+            payload = _legacy_indexer_payload(data)
+            if data.get('api_key') == Constants.CREDENTIAL_REPLACEMENT:
+                settings = provider.get('settings') or {}
+                if isinstance(settings, dict):
+                    payload['settings']['api_key'] = settings.get('api_key')
+            return return_api(_provider_indexer_to_legacy(
+                save_provider('indexers', payload, id)
+            ))
+
+        elif request.method == 'DELETE':
+            delete_provider('indexers', id)
+            return return_api({})
+
     indexer = ExternalIndexers.get_indexer(id)
 
     if request.method == 'GET':

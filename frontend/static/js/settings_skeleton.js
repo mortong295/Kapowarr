@@ -1,7 +1,7 @@
 const feature = document.querySelector('main').dataset.feature;
 const providerFeatures = ['indexers', 'connections', 'importlists'];
 const providerImplementations = {
-	indexers: ['getcomics', 'newznab', 'torznab', 'rawrss'],
+	indexers: ['getcomics', 'newznab', 'torznab', 'prowlarr', 'rawrss'],
 	connections: ['webhook', 'discord', 'gotify', 'plex', 'jellyfin'],
 	importlists: ['json', 'csv', 'pulllist', 'mylar', 'comicvine']
 };
@@ -17,6 +17,10 @@ const providerDefaults = {
 		},
 		torznab: {
 			description: 'Torznab-compatible torrent indexer. Use Prowlarr or Jackett category IDs where needed.',
+			settings: {base_url: '', api_key: '', categories: '7030'}
+		},
+		prowlarr: {
+			description: 'Prowlarr indexer proxy. Kapowarr asks Prowlarr to search configured comic-capable indexers.',
 			settings: {base_url: '', api_key: '', categories: '7030'}
 		},
 		rawrss: {
@@ -64,9 +68,81 @@ const providerDefaults = {
 			settings: {url: '', items: []}
 		},
 		comicvine: {
-			description: 'ComicVine list import source. Use a pre-exported JSON list until API-backed list sync lands.',
-			settings: {items: []}
+			description: 'Live ComicVine import source for story arcs and volume issue lists.',
+			settings: {story_arc_ids: '', volume_ids: ''}
 		}
+	}
+};
+const providerSchemas = {
+	indexers: {
+		getcomics: [],
+		newznab: [
+			{key: 'base_url', label: 'Base URL', type: 'url'},
+			{key: 'api_key', label: 'API Key', type: 'password'},
+			{key: 'categories', label: 'Categories', type: 'text'}
+		],
+		torznab: [
+			{key: 'base_url', label: 'Base URL', type: 'url'},
+			{key: 'api_key', label: 'API Key', type: 'password'},
+			{key: 'categories', label: 'Categories', type: 'text'}
+		],
+		prowlarr: [
+			{key: 'base_url', label: 'Base URL', type: 'url'},
+			{key: 'api_key', label: 'API Key', type: 'password'},
+			{key: 'categories', label: 'Categories', type: 'text'}
+		],
+		rawrss: [
+			{key: 'feed_url', label: 'Feed URL', type: 'url'}
+		]
+	},
+	connections: {
+		webhook: [
+			{key: 'url', label: 'Webhook URL', type: 'url'},
+			{key: 'headers', label: 'Headers JSON', type: 'json'}
+		],
+		discord: [
+			{key: 'webhook_url', label: 'Webhook URL', type: 'url'}
+		],
+		gotify: [
+			{key: 'base_url', label: 'Base URL', type: 'url'},
+			{key: 'token', label: 'Token', type: 'password'},
+			{key: 'priority', label: 'Priority', type: 'number'}
+		],
+		plex: [
+			{key: 'base_url', label: 'Base URL', type: 'url'},
+			{key: 'token', label: 'Token', type: 'password'},
+			{key: 'section_id', label: 'Section ID', type: 'text'},
+			{key: 'path', label: 'Library Path', type: 'text'}
+		],
+		jellyfin: [
+			{key: 'base_url', label: 'Base URL', type: 'url'},
+			{key: 'api_key', label: 'API Key', type: 'password'},
+			{key: 'item_id', label: 'Item ID', type: 'text'},
+			{key: 'path', label: 'Library Path', type: 'text'}
+		]
+	},
+	importlists: {
+		json: [
+			{key: 'url', label: 'URL', type: 'url'},
+			{key: 'body', label: 'Inline JSON', type: 'textarea'}
+		],
+		csv: [
+			{key: 'url', label: 'URL', type: 'url'},
+			{key: 'body', label: 'Inline CSV', type: 'textarea'}
+		],
+		pulllist: [
+			{key: 'url', label: 'Feed URL', type: 'url'},
+			{key: 'format', label: 'Format', type: 'select', options: ['rss', 'json', 'csv']}
+		],
+		mylar: [
+			{key: 'url', label: 'Export URL', type: 'url'},
+			{key: 'body', label: 'Inline Export JSON', type: 'textarea'}
+		],
+		comicvine: [
+			{key: 'api_key', label: 'API Key Override', type: 'password'},
+			{key: 'story_arc_ids', label: 'Story Arc IDs', type: 'text'},
+			{key: 'volume_ids', label: 'Volume IDs', type: 'text'}
+		]
 	}
 };
 let apiKey = null;
@@ -83,6 +159,14 @@ function parseJSONField(selector, fallback) {
 	const raw = document.querySelector(selector).value.trim();
 	if (!raw) return fallback;
 	return JSON.parse(raw);
+};
+
+function parseJSONFieldFallback(selector, fallback) {
+	try {
+		return parseJSONField(selector, fallback);
+	} catch {
+		return fallback;
+	};
 };
 
 function showFeedback(message, error=false) {
@@ -130,7 +214,7 @@ function providerPayload() {
 		implementation: document.querySelector('#provider-implementation-input').value,
 		enabled: document.querySelector('#provider-enabled-input').checked,
 		priority: parseInt(document.querySelector('#provider-priority-input').value),
-		settings: parseJSONField('#provider-settings-input', {}),
+		settings: providerSettingsPayload(),
 		tags: parseList(document.querySelector('#provider-tags-input').value),
 		events: parseList(document.querySelector('#provider-events-input').value)
 	};
@@ -139,6 +223,72 @@ function providerPayload() {
 function implementationDefault() {
 	const implementation = document.querySelector('#provider-implementation-input').value;
 	return (providerDefaults[feature] || {})[implementation] || null;
+};
+
+function implementationSchema() {
+	const implementation = document.querySelector('#provider-implementation-input').value;
+	return ((providerSchemas[feature] || {})[implementation] || []);
+};
+
+function providerSettingsPayload() {
+	const settings = parseJSONFieldFallback('#provider-settings-input', {});
+	implementationSchema().forEach(field => {
+		const input = document.querySelector(`[data-provider-setting="${field.key}"]`);
+		if (!input) return;
+		if (field.type === 'checkbox') settings[field.key] = input.checked;
+		else if (field.type === 'number') settings[field.key] = parseInt(input.value || 0);
+		else if (field.type === 'json') {
+			try {
+				settings[field.key] = JSON.parse(input.value || '{}');
+			} catch {
+				settings[field.key] = {};
+			};
+		}
+		else settings[field.key] = input.value;
+	});
+	return settings;
+};
+
+function syncSchemaToJSON() {
+	const settings = providerSettingsPayload();
+	document.querySelector('#provider-settings-input').value = JSON.stringify(settings, null, 2);
+};
+
+function renderSchemaFields(settings=null) {
+	const container = document.querySelector('#provider-schema-fields');
+	if (!container) return;
+	container.innerHTML = '';
+	const schema = implementationSchema();
+	container.classList.toggle('hidden', !schema.length);
+	const values = settings || parseJSONFieldFallback('#provider-settings-input', {});
+	schema.forEach(field => {
+		const label = document.createElement('label');
+		label.innerHTML = `<span>${field.label}</span>`;
+		let input;
+		if (field.type === 'textarea' || field.type === 'json') {
+			input = document.createElement('textarea');
+		} else if (field.type === 'select') {
+			input = document.createElement('select');
+			(field.options || []).forEach(optionValue => {
+				const option = document.createElement('option');
+				option.value = optionValue;
+				option.innerText = optionValue.toUpperCase();
+				input.appendChild(option);
+			});
+		} else {
+			input = document.createElement('input');
+			input.type = field.type || 'text';
+		};
+		input.dataset.providerSetting = field.key;
+		const value = values[field.key];
+		if (field.type === 'checkbox') input.checked = value !== false;
+		else if (field.type === 'json') input.value = JSON.stringify(value || {}, null, 2);
+		else input.value = value === undefined || value === null ? '' : value;
+		input.oninput = syncSchemaToJSON;
+		input.onchange = syncSchemaToJSON;
+		label.appendChild(input);
+		container.appendChild(label);
+	});
 };
 
 function updateImplementationHelp(fill=false) {
@@ -160,6 +310,7 @@ function updateImplementationHelp(fill=false) {
 			null,
 			2
 		);
+	renderSchemaFields();
 };
 
 function profilePayload() {
@@ -183,6 +334,7 @@ function fillProviderForm(item) {
 	document.querySelector('#provider-tags-input').value = (item.tags || []).join(',');
 	document.querySelector('#provider-events-input').value = (item.events || []).join(',');
 	updateImplementationHelp();
+	renderSchemaFields(item.settings || {});
 };
 
 function fillProfileForm(item) {
@@ -315,7 +467,10 @@ function buildImplementationOptions() {
 		option.innerText = implementation;
 		select.appendChild(option);
 	});
-	select.onchange = () => updateImplementationHelp(true);
+	select.onchange = () => {
+		updateImplementationHelp(true);
+		renderSchemaFields();
+	};
 };
 
 function setupFeatureForm() {
