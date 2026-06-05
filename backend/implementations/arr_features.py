@@ -1000,6 +1000,14 @@ def save_pull_list_item(data: Any) -> Dict[str, Any]:
     ).fetchonedict() or {}
 
 
+def _first_value(item: Mapping[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = item.get(key)
+        if value not in (None, ''):
+            return value
+    return ''
+
+
 def _normalise_import_list_items(items: Any) -> List[Dict[str, Any]]:
     if not isinstance(items, list):
         raise InvalidKeyValue('items', items)
@@ -1009,26 +1017,75 @@ def _normalise_import_list_items(items: Any) -> List[Dict[str, Any]]:
         if not isinstance(item, dict):
             raise InvalidKeyValue('items', items)
         normalised.append({
-            'provider': item.get('provider'),
-            'release_date': (
-                item.get('release_date')
-                or item.get('date')
-                or item.get('onsale_date')
-                or ''
+            'provider': _first_value(item, 'provider', 'source'),
+            'release_date': _first_value(
+                item,
+                'release_date',
+                'date',
+                'onsale_date',
+                'store_date',
+                'cover_date',
+                'IssueDate',
+                'ReleaseDate'
             ),
-            'publisher': item.get('publisher') or '',
-            'series': item.get('series') or item.get('title') or '',
-            'issue_number': (
-                item.get('issue_number')
-                or item.get('issue')
-                or item.get('number')
-                or ''
+            'publisher': _first_value(
+                item,
+                'publisher',
+                'Publisher',
+                'publisher_name'
             ),
-            'title': item.get('issue_title') or item.get('subtitle') or '',
-            'status': item.get('status') or 'pending'
+            'series': _first_value(
+                item,
+                'series',
+                'Series',
+                'series_title',
+                'ComicName',
+                'name',
+                'title'
+            ),
+            'issue_number': _first_value(
+                item,
+                'issue_number',
+                'issue',
+                'number',
+                'Issue_Number',
+                'IssueNumber',
+                'issueNumber'
+            ),
+            'title': _first_value(
+                item,
+                'issue_title',
+                'subtitle',
+                'IssueName',
+                'issue_name',
+                'name'
+            ),
+            'status': _first_value(item, 'status', 'Status') or 'pending'
         })
 
     return normalised
+
+
+def _extract_json_import_items(parsed: Any) -> Any:
+    if not isinstance(parsed, dict):
+        return parsed
+
+    for key in (
+        'items',
+        'pull_list',
+        'pullList',
+        'comics',
+        'watchlist',
+        'series',
+        'issues',
+        'results',
+        'data'
+    ):
+        value = parsed.get(key)
+        if isinstance(value, list):
+            return value
+
+    return []
 
 
 def _pull_items_from_rss(feed_body: str) -> List[Dict[str, Any]]:
@@ -1081,9 +1138,7 @@ def _pull_items_from_csv(csv_body: str) -> List[Dict[str, Any]]:
 
 def _pull_items_from_json(json_body: str) -> List[Dict[str, Any]]:
     parsed = loads(json_body or '[]')
-    if isinstance(parsed, dict):
-        parsed = parsed.get('items') or parsed.get('pull_list') or []
-    return _normalise_import_list_items(parsed)
+    return _normalise_import_list_items(_extract_json_import_items(parsed))
 
 
 def _fetch_import_list_body(url: Any) -> str:

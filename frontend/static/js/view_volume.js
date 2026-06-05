@@ -377,12 +377,12 @@ function showManualSearch(api_key, issue_id=null) {
 			const download_button = entry.querySelector('.search-action-column :nth-child(1)');
 			download_button.classList.add('icon-text-color');
 			download_button.onclick =
-				e => addManualSearch(result.link, false, download_button, api_key, issue_id);
+				e => addManualSearch(result, false, download_button, api_key, issue_id);
 
 			const force_download_button = entry.querySelector('.search-action-column :nth-child(2)');
 			force_download_button.classList.add('icon-text-color');
 			force_download_button.onclick =
-				e => addManualSearch(result.link, true, force_download_button, api_key, issue_id);
+				e => addManualSearch(result, true, force_download_button, api_key, issue_id);
 
 			const blocklist_button = entry.querySelector('.search-action-column :nth-child(3)')
 			if (result.match_issue === null || !result.match_issue.includes('blocklist'))
@@ -404,7 +404,7 @@ function showManualSearch(api_key, issue_id=null) {
 	});
 };
 
-function addManualSearch(link, force, button, api_key, issue_id=null) {
+function addManualSearch(result, force, button, api_key, issue_id=null) {
 	button.classList.remove('error');
 	button.title = 'Download';
 	const img = button.querySelector('img');
@@ -415,7 +415,14 @@ function addManualSearch(link, force, button, api_key, issue_id=null) {
 		? `/issues/${issue_id}/download`
 		: `/volumes/${volume_id}/download`;
 
-	sendAPI('POST', url, api_key, {link: link, force_match: force})
+	sendAPI('POST', url, api_key, {}, {
+		link: result.link,
+		force_match: force,
+		download_type: result.download_type || null,
+		source_type: result.source_type || null,
+		source_name: result.source_name || result.source || null,
+		web_title: result.display_title || null
+	})
 	.then(response => response.json())
 	.then(json => {
 		img.classList.remove('spinning');

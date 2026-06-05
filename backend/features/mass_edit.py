@@ -168,7 +168,25 @@ class MassEditorSearch(MassEditorAction):
 
             search_results = auto_search(volume_id)
             download_handler.add_multiple(
-                (result['link'], volume_id, None, False)
+                (
+                    result['link'],
+                    volume_id,
+                    None,
+                    False,
+                    {
+                        key: value
+                        for key, value in {
+                            'download_type': result.get('download_type'),
+                            'source_type': result.get('source_type'),
+                            'source_name': (
+                                result.get('source_name')
+                                or result.get('source')
+                            ),
+                            'web_title': result.get('display_title')
+                        }.items()
+                        if value not in (None, '')
+                    }
+                )
                 for result in search_results
             )
 

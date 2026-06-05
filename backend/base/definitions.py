@@ -449,6 +449,7 @@ class EnqueuingDownloadFailureReason(BaseEnum):
     NO_MATCHES = "No links found on webpage that match to volume and are not blocklisted"
     NO_WORKING_LINKS = "All download links found on the webpage are broken"
     ONLY_RATE_LIMITED_LINKS = "All working download links on the webpage are from rate limited services"
+    UNSUPPORTED_LINK = "Unsupported download link"
 
     LINK_BROKEN = "Download link broken"
 
@@ -496,6 +497,10 @@ service on the GC page
 class DownloadSource(BaseEnum):
     "All possible download sources"
 
+    DIRECT = "Direct"
+    "A direct file link outside a GetComics page"
+    TORRENT = "Torrent"
+    "A torrent release"
     MEGA = "Mega"
     MEDIAFIRE = "MediaFire"
     WETRANSFER = "WeTransfer"
@@ -586,7 +591,13 @@ class RemoteMappingData(TypedDict):
     local_path: str
 
 
-class SearchResultData(FilenameData):
+class SearchResultTransportData(TypedDict, total=False):
+    download_type: str
+    source_type: str
+    source_name: str
+
+
+class SearchResultData(FilenameData, SearchResultTransportData):
     link: str
     display_title: str
     source: str

@@ -102,6 +102,8 @@ class indexer_search(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['source'], 'Weekly RSS')
         self.assertEqual(results[0]['link'], 'https://example.invalid/batman-001.cbz')
+        self.assertEqual(results[0]['download_type'], 'direct')
+        self.assertEqual(results[0]['source_type'], 'Direct')
 
     async def test_newznab_indexer_builds_api_search_request(self):
         from backend.features.search import _search_indexer
@@ -136,6 +138,9 @@ class indexer_search(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.params['q'], 'Batman 002')
         self.assertEqual(session.params['apikey'], 'token')
         self.assertEqual(results[0]['source'], 'Newznab Comics')
+        self.assertEqual(results[0]['download_type'], 'usenet')
+        self.assertEqual(results[0]['source_type'], 'Usenet')
+        self.assertEqual(results[0]['source_name'], 'Newznab Comics')
 
 
 if __name__ == '__main__':

@@ -197,3 +197,26 @@
 .arr-feedback {
 	margin: 0;
 }
+
+.arr-provider-help {
+	display: grid;
+	gap: .5rem;
+	margin: 0;
+	padding: .75rem;
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	background: var(--background-color);
+	color: var(--dimmed-text-color);
+	line-height: 1.35;
+}
+
+.arr-provider-help:empty {
+	display: none;
+}
+
+.arr-provider-help code {
+	display: block;
+	overflow-x: auto;
+	white-space: pre;
+	color: var(--text-color);
+}

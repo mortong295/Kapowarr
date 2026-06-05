@@ -80,6 +80,52 @@ class import_list_sync(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]['series'], 'Avengers')
 
+    def test_mylar_export_shape_syncs_to_pull_list(self):
+        provider = save_provider('importlists', {
+            'name': 'Mylar Export',
+            'implementation': 'mylar',
+            'enabled': True,
+            'settings': {
+                'body': (
+                    '{"comics":[{"ComicName":"Saga",'
+                    '"Issue_Number":"64","IssueName":"Chapter Sixty Four",'
+                    f'"IssueDate":"{_date_from_now(8)}"}}]'
+                    '}'
+                )
+            }
+        })
+
+        result = sync_import_list(provider['id'])
+        items = get_pull_list()
+
+        self.assertEqual(result['items_synced'], 1)
+        self.assertEqual(items[0]['series'], 'Saga')
+        self.assertEqual(items[0]['issue_number'], '64')
+        self.assertEqual(items[0]['title'], 'Chapter Sixty Four')
+
+    def test_comicvine_result_shape_syncs_to_pull_list(self):
+        provider = save_provider('importlists', {
+            'name': 'ComicVine List',
+            'implementation': 'comicvine',
+            'enabled': True,
+            'settings': {
+                'items': [{
+                    'name': 'Daredevil',
+                    'number': '3',
+                    'store_date': _date_from_now(9),
+                    'publisher': 'Marvel'
+                }]
+            }
+        })
+
+        result = sync_import_list(provider['id'])
+        items = get_pull_list()
+
+        self.assertEqual(result['items_synced'], 1)
+        self.assertEqual(items[0]['series'], 'Daredevil')
+        self.assertEqual(items[0]['issue_number'], '3')
+        self.assertEqual(items[0]['publisher'], 'Marvel')
+
     def test_manual_pull_list_item_can_be_deleted(self):
         item = save_pull_list_item({
             'release_date': '2026-06-10',
@@ -250,5 +296,8 @@ class pull_list_search_task(import_list_sync):
         items = get_pull_list()
 
         self.assertEqual(calls, [(1, 1)])
-        self.assertEqual(result, [('https://example.invalid/batman-1', 1, 1)])
+        self.assertEqual(
+            result,
+            [('https://example.invalid/batman-1', 1, 1, False, {})]
+        )
         self.assertEqual(items[0]['status'], 'queued')

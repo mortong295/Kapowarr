@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 
 from asyncio import gather, run
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 from xml.etree import ElementTree
 from typing import Any, Dict, List, Mapping, Tuple, Union
 
 from backend.base.custom_exceptions import InvalidKeyValue
-from backend.base.definitions import (QUERY_FORMATS, MatchedSearchResultData,
+from backend.base.definitions import (FileConstants, QUERY_FORMATS,
+                                      DownloadSource,
+                                      MatchedSearchResultData,
                                       SearchResultData, SearchSource,
                                       SpecialVersion)
 from backend.base.file_extraction import (extract_filename_data,
@@ -331,11 +333,61 @@ def _query_matches_title(query: str, title: str) -> bool:
     return all(term in title_lower for term in query_terms)
 
 
+def _transport_from_link(link: str) -> Dict[str, str]:
+    link_lower = link.lower()
+    if link_lower.startswith('magnet:'):
+        return {
+            'download_type': 'torrent',
+            'source_type': DownloadSource.TORRENT.value
+        }
+
+    parsed = urlparse(link_lower)
+    query = parse_qs(parsed.query)
+    if query.get('t', [''])[0] == 'get' or '.nzb' in link_lower:
+        return {
+            'download_type': 'usenet',
+            'source_type': DownloadSource.USENET.value
+        }
+
+    if '.torrent' in link_lower:
+        return {
+            'download_type': 'torrent',
+            'source_type': DownloadSource.TORRENT.value
+        }
+
+    if any(
+        parsed.path.endswith(ext.lower())
+        for ext in FileConstants.CONTAINER_EXTENSIONS
+    ):
+        return {
+            'download_type': 'direct',
+            'source_type': DownloadSource.DIRECT.value
+        }
+
+    return {}
+
+
 def _format_indexer_result(
     indexer: Mapping[str, Any],
     title: str,
-    link: str
+    link: str,
+    download_type: Union[str, None] = None
 ) -> SearchResultData:
+    implementation = _normalise_indexer_implementation(indexer)
+    source = str(indexer.get('name') or implementation or '')
+    transport = _transport_from_link(link)
+    if download_type:
+        source_type = {
+            'direct': DownloadSource.DIRECT,
+            'torrent': DownloadSource.TORRENT,
+            'usenet': DownloadSource.USENET
+        }.get(download_type)
+        if source_type:
+            transport = {
+                'download_type': download_type,
+                'source_type': source_type.value
+            }
+
     return {
         **extract_filename_data(
             title,
@@ -344,7 +396,9 @@ def _format_indexer_result(
         ),
         'link': link,
         'display_title': title,
-        'source': indexer.get('name') or indexer.get('implementation') or ''
+        'source': source,
+        'source_name': source,
+        **transport
     }
 
 
@@ -389,7 +443,13 @@ async def _search_newznab_indexer(
         quiet_fail=True
     )
     return [
-        _format_indexer_result(indexer, item['title'], item['link'])
+        _format_indexer_result(
+            indexer,
+            item['title'],
+            item['link'],
+            'torrent' if _normalise_indexer_implementation(indexer) == 'torznab'
+            else 'usenet'
+        )
         for item in _rss_items(feed_body)
     ]
 

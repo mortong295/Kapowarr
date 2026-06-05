@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Connections Settings{% endblock %}
+{% block title %}Connect Settings{% endblock %}
 {% block css %}
 	<link rel="stylesheet" href="{{ url_for('static', filename='css/arr_skeleton.css') }}">
 {% endblock %}
@@ -14,8 +14,8 @@
 	<div class="arr-page">
 		<header class="arr-header">
 			<div>
-				<h1>Connections</h1>
-				<p>Connections will provide *arr-style notifications, webhooks, and media-server library refresh integrations.</p>
+				<h1>Connect</h1>
+				<p>Configure notifications, webhooks, and media-server library refresh integrations.</p>
 			</div>
 			<span class="arr-badge">Editable settings</span>
 		</header>
@@ -81,6 +81,7 @@
 						<span>Settings JSON</span>
 						<textarea id="provider-settings-input"></textarea>
 					</label>
+					<p id="provider-settings-help" class="arr-provider-help"></p>
 					<label class="arr-checkbox">
 						<input id="provider-enabled-input" type="checkbox" checked>
 						<span>Enabled</span>

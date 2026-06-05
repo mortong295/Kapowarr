@@ -3,6 +3,7 @@
 from asyncio import run
 from datetime import datetime, timedelta
 from io import BytesIO
+from os.path import isdir
 from typing import Any, Dict, List, Tuple, Type, Union
 
 from flask import Blueprint, request, send_file
@@ -47,7 +48,6 @@ from backend.implementations.arr_features import (comicinfo_xml,
                                                   save_pull_list_item,
                                                   save_story_arc,
                                                   series_json,
-                                                  sync_enabled_import_lists,
                                                   sync_import_list,
                                                   test_provider,
                                                   write_comicinfo_xml,
@@ -66,6 +66,7 @@ from backend.implementations.external_clients import ExternalClients
 from backend.implementations.external_indexers import ExternalIndexers
 from backend.implementations.file_matching import (get_file_matching,
                                                    set_file_matching)
+from backend.implementations.mylar_import import parse_mylar_export
 from backend.implementations.naming import (generate_volume_folder_name,
                                             preview_mass_rename)
 from backend.implementations.remote_mapping import RemoteMappings
@@ -312,6 +313,142 @@ def api_public():
 @auth
 def api_about():
     return return_api(get_about_data())
+
+
+def _system_health() -> Dict[str, Any]:
+    settings = Settings().sv
+    root_folders = RootFolders().get_folder_list()
+    clients = ExternalClients.get_clients()
+    providers = {
+        feature: get_providers(feature)
+        for feature in ('indexers', 'connections', 'importlists')
+    }
+    enabled_indexers = [
+        provider
+        for provider in providers['indexers']
+        if provider.get('enabled')
+    ]
+    enabled_connections = [
+        provider
+        for provider in providers['connections']
+        if provider.get('enabled')
+    ]
+    enabled_importlists = [
+        provider
+        for provider in providers['importlists']
+        if provider.get('enabled')
+    ]
+    download_types = {
+        'torrent': len([
+            client
+            for client in clients
+            if client.get('download_type') == DownloadType.TORRENT.value
+        ]),
+        'usenet': len([
+            client
+            for client in clients
+            if client.get('download_type') == DownloadType.USENET.value
+        ])
+    }
+
+    checks: List[Dict[str, str]] = []
+
+    def add_check(
+        key: str,
+        status: str,
+        message: str,
+        action: str = ''
+    ) -> None:
+        checks.append({
+            'key': key,
+            'status': status,
+            'message': message,
+            'action': action
+        })
+
+    add_check(
+        'comicvine_api_key',
+        'ok' if settings.comicvine_api_key else 'warning',
+        (
+            'ComicVine API key is configured.'
+            if settings.comicvine_api_key else
+            'ComicVine API key is missing; metadata refresh will be limited.'
+        ),
+        'Add a ComicVine API key in Settings.'
+    )
+    add_check(
+        'root_folders',
+        'ok' if root_folders else 'error',
+        (
+            f'{len(root_folders)} root folder(s) configured.'
+            if root_folders else
+            'No root folders are configured.'
+        ),
+        'Add a library root folder.'
+    )
+    add_check(
+        'download_folder',
+        'ok' if isdir(settings.download_folder) else 'warning',
+        (
+            'Download folder exists.'
+            if isdir(settings.download_folder) else
+            'Download folder does not exist yet.'
+        ),
+        'Create or correct the download folder path.'
+    )
+    add_check(
+        'indexers',
+        'ok' if enabled_indexers else 'warning',
+        f'{len(enabled_indexers)} enabled indexer provider(s).',
+        'Enable at least one indexer provider.'
+    )
+    add_check(
+        'download_clients',
+        'ok' if clients else 'warning',
+        (
+            f"{len(clients)} download client(s) configured "
+            f"({download_types['torrent']} torrent, "
+            f"{download_types['usenet']} usenet)."
+        ),
+        'Add a torrent or Usenet download client.'
+    )
+    add_check(
+        'connections',
+        'ok' if enabled_connections else 'info',
+        f'{len(enabled_connections)} enabled connection(s).',
+        'Enable Plex, Jellyfin, or notification connections.'
+    )
+    add_check(
+        'importlists',
+        'ok' if enabled_importlists else 'info',
+        f'{len(enabled_importlists)} enabled import list(s).',
+        'Enable pull-list or migration import providers.'
+    )
+
+    status_order = {'ok': 0, 'info': 0, 'warning': 1, 'error': 2}
+    worst = max(status_order[check['status']] for check in checks)
+    status = 'error' if worst == 2 else 'warning' if worst == 1 else 'ok'
+
+    return {
+        'status': status,
+        'checks': checks,
+        'counts': {
+            'root_folders': len(root_folders),
+            'download_clients': len(clients),
+            'enabled_indexers': len(enabled_indexers),
+            'enabled_connections': len(enabled_connections),
+            'enabled_importlists': len(enabled_importlists),
+            'torrent_clients': download_types['torrent'],
+            'usenet_clients': download_types['usenet']
+        }
+    }
+
+
+@api.route('/system/health', methods=['GET'])
+@error_handler
+@auth
+def api_system_health():
+    return return_api(_system_health())
 
 
 @api.route('/system/logs', methods=['GET'])
@@ -893,14 +1030,6 @@ def api_calendar():
     if days < 1 or days > 366:
         raise InvalidKeyValue('days', days)
 
-    sync_pull_list = str(
-        request.values.get('sync_pull_list', '1')
-    ).lower() not in ('0', 'false', 'no')
-    synced = (
-        sync_enabled_import_lists(notify=False)
-        if sync_pull_list else
-        []
-    )
     enabled_import_lists = [
         provider
         for provider in get_providers('importlists')
@@ -912,9 +1041,17 @@ def api_calendar():
         'pull_list_items': get_calendar_pull_list(days),
         'pull_list': {
             'status': 'available',
-            'sync_on_load': sync_pull_list,
+            'sync_on_load': False,
             'enabled_providers': len(enabled_import_lists),
-            'synced_providers': synced,
+            'providers': [
+                {
+                    'id': provider.get('id'),
+                    'name': provider.get('name'),
+                    'implementation': provider.get('implementation'),
+                    'last_sync': provider.get('last_sync')
+                }
+                for provider in enabled_import_lists
+            ],
             'description': (
                 'Weekly pull-list providers are synced into this calendar.'
             )
@@ -1076,6 +1213,16 @@ def api_import_list(id: int):
 @auth
 def api_import_list_sync(id: int):
     return return_api(sync_import_list(id))
+
+
+@api.route('/importlists/mylar/preview', methods=['POST'])
+@error_handler
+@auth
+def api_mylar_import_preview():
+    data = request.get_json()
+    if isinstance(data, dict) and 'export' in data:
+        data = data['export']
+    return return_api(parse_mylar_export(data or {}))
 
 
 @api.route('/pulllist', methods=['GET', 'POST'])
@@ -1546,14 +1693,42 @@ def api_volume_manual_search(id: int):
     return return_api(result)
 
 
+def _download_request_data() -> Dict[str, Any]:
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
+
+
+def _download_queue_options(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        key: data[key]
+        for key in (
+            'download_type',
+            'source_type',
+            'source_name',
+            'web_title'
+        )
+        if data.get(key) not in (None, '')
+    }
+
+
 @api.route('/volumes/<int:id>/download', methods=['POST'])
 @error_handler
 @auth
 def api_volume_download(id: int):
     Library.get_volume(id)
-    link: str = extract_key(request, 'link')
-    force_match: bool = extract_key(request, 'force_match')
-    result = run(DownloadHandler().add(link, id, force_match=force_match))
+    data = _download_request_data()
+    link: str = data.get('link') or extract_key(request, 'link')
+    force_match = (
+        bool(data['force_match'])
+        if 'force_match' in data else
+        extract_key(request, 'force_match')
+    )
+    result = run(DownloadHandler().add(
+        link,
+        id,
+        force_match=force_match,
+        **_download_queue_options(data)
+    ))
     return return_api(
         {
             'result': (result or (None,))[0],
@@ -1580,10 +1755,19 @@ def api_issue_manual_search(id: int):
 @auth
 def api_issue_download(id: int):
     volume_id = Library.get_issue(id).get_data().volume_id
-    link = extract_key(request, 'link')
-    force_match: bool = extract_key(request, 'force_match')
+    data = _download_request_data()
+    link = data.get('link') or extract_key(request, 'link')
+    force_match = (
+        bool(data['force_match'])
+        if 'force_match' in data else
+        extract_key(request, 'force_match')
+    )
     result = run(DownloadHandler().add(
-        link, volume_id, id, force_match=force_match
+        link,
+        volume_id,
+        id,
+        force_match=force_match,
+        **_download_queue_options(data)
     ))
     return return_api(
         {

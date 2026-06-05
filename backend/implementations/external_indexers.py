@@ -13,6 +13,7 @@ from backend.base.custom_exceptions import (ClientNotWorking,
                                             CredentialInvalid,
                                             InvalidKeyValue, KeyNotFound)
 from backend.base.definitions import (BrokenClientReason, Constants,
+                                      DownloadSource,
                                       SearchResultData)
 from backend.base.file_extraction import extract_filename_data
 from backend.base.helpers import (AsyncSession, Session, get_subclasses,
@@ -285,7 +286,10 @@ class NewznabIndexer(BaseExternalIndexer):
             ),
             'link': link,
             'display_title': title,
-            'source': source_name
+            'source': source_name,
+            'download_type': 'usenet',
+            'source_type': DownloadSource.USENET.value,
+            'source_name': source_name
         }
 
     @staticmethod
@@ -306,7 +310,10 @@ class NewznabIndexer(BaseExternalIndexer):
             ),
             'link': link,
             'display_title': title,
-            'source': source_name
+            'source': source_name,
+            'download_type': 'usenet',
+            'source_type': DownloadSource.USENET.value,
+            'source_name': source_name
         }
 
 
@@ -406,7 +413,10 @@ class ProwlarrIndexer(BaseExternalIndexer):
                 ),
                 'link': link,
                 'display_title': title,
-                'source': str(item.get('indexer') or source_name)
+                'source': str(item.get('indexer') or source_name),
+                'download_type': 'usenet',
+                'source_type': DownloadSource.USENET.value,
+                'source_name': str(item.get('indexer') or source_name)
             })
 
         return formatted

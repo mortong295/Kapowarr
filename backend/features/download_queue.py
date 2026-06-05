@@ -6,6 +6,7 @@ from asyncio import gather, run
 from os import listdir
 from os.path import basename, join
 from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Tuple, Type, Union
+from urllib.parse import parse_qs, urlparse
 
 from typing_extensions import assert_never
 
@@ -17,7 +18,8 @@ from backend.base.custom_exceptions import (ClientNotWorking,
                                             InvalidKeyValue, IssueNotFound,
                                             LinkBroken)
 from backend.base.definitions import (BlocklistReason, Constants, Download,
-                                      DownloadSource, DownloadState, DownloadType,
+                                      DownloadSource, DownloadState,
+                                      DownloadType, FileConstants,
                                       EnqueuingDownloadFailureReason,
                                       ExternalDownload, SeedingHandling)
 from backend.base.files import create_folder, delete_file_folder
@@ -28,6 +30,7 @@ from backend.features.post_processing import (PostProcessor,
                                               PostProcessorTorrentsCopy)
 from backend.implementations.blocklist import add_to_blocklist
 from backend.implementations.download_clients import (BaseDirectDownload,
+                                                      DirectDownload,
                                                       MegaDownload,
                                                       TorrentDownload,
                                                       UsenetDownload)
@@ -41,6 +44,10 @@ from backend.internals.settings import Settings
 
 if TYPE_CHECKING:
     from threading import Thread
+
+
+DownloadTypeInput = Union[str, int, DownloadType, None]
+DownloadSourceInput = Union[str, DownloadSource, None]
 
 
 # =====================
@@ -68,6 +75,83 @@ def _notify_download_grabbed(download: Download) -> None:
         'web_link': download.web_link
     })
     return
+
+
+def _normalise_download_type(value: DownloadTypeInput) -> Union[DownloadType, None]:
+    if isinstance(value, DownloadType):
+        return value
+    if isinstance(value, int):
+        try:
+            return DownloadType(value)
+        except ValueError:
+            return None
+    if not isinstance(value, str):
+        return None
+
+    lowered = value.strip().lower()
+    if lowered in ('direct', 'file', str(DownloadType.DIRECT.value)):
+        return DownloadType.DIRECT
+    if lowered in ('torrent', 'torznab', str(DownloadType.TORRENT.value)):
+        return DownloadType.TORRENT
+    if lowered in ('usenet', 'newznab', 'nzb', str(DownloadType.USENET.value)):
+        return DownloadType.USENET
+    return None
+
+
+def _normalise_download_source(
+    value: DownloadSourceInput,
+    fallback: DownloadSource
+) -> DownloadSource:
+    if isinstance(value, DownloadSource):
+        return value
+    if isinstance(value, str):
+        try:
+            return DownloadSource(value)
+        except ValueError:
+            for source in DownloadSource:
+                if value.strip().lower() == source.name.lower():
+                    return source
+    return fallback
+
+
+def _detect_download_type(
+    link: str,
+    download_type: DownloadTypeInput = None,
+    source_type: DownloadSourceInput = None
+) -> Union[str, None]:
+    explicit = _normalise_download_type(download_type)
+    if explicit == DownloadType.DIRECT:
+        return 'direct'
+    if explicit == DownloadType.TORRENT:
+        return 'torrent'
+    if explicit == DownloadType.USENET:
+        return 'usenet'
+
+    source = _normalise_download_source(source_type, DownloadSource.DIRECT)
+    if source == DownloadSource.USENET:
+        return 'usenet'
+    if source in (DownloadSource.TORRENT, DownloadSource.GETCOMICS_TORRENT):
+        return 'torrent'
+
+    link_lower = link.lower()
+    if link_lower.startswith(Constants.GC_SITE_URL):
+        return 'gc'
+    if link_lower.startswith('magnet:'):
+        return 'torrent'
+
+    parsed = urlparse(link_lower)
+    query = parse_qs(parsed.query)
+    if query.get('t', [''])[0] == 'get' or '.nzb' in link_lower:
+        return 'usenet'
+    if '.torrent' in link_lower:
+        return 'torrent'
+    if any(
+        parsed.path.endswith(ext.lower())
+        for ext in FileConstants.CONTAINER_EXTENSIONS
+    ):
+        return 'direct'
+
+    return None
 
 
 class DownloadHandler(metaclass=Singleton):
@@ -369,7 +453,12 @@ class DownloadHandler(metaclass=Singleton):
         raise DownloadNotFound(download_id)
 
     # region Adding
-    def __determine_link_type(self, link: str) -> Union[str, None]:
+    def __determine_link_type(
+        self,
+        link: str,
+        download_type: DownloadTypeInput = None,
+        source_type: DownloadSourceInput = None
+    ) -> Union[str, None]:
         """Determine the service type of the link (e.g. getcomics, torrent, etc.).
 
         Args:
@@ -378,11 +467,7 @@ class DownloadHandler(metaclass=Singleton):
         Returns:
             Union[str, None]: The service type of the link or `None` if unknown.
         """
-        if link.startswith(Constants.GC_SITE_URL):
-            return 'gc'
-        if link.startswith(('http://', 'https://')):
-            return 'usenet'
-        return None
+        return _detect_download_type(link, download_type, source_type)
 
     def link_in_queue(self, link: str) -> bool:
         """Check if a link is already in the queue.
@@ -417,7 +502,11 @@ class DownloadHandler(metaclass=Singleton):
         link: str,
         volume_id: int,
         issue_id: Union[int, None] = None,
-        force_match: bool = False
+        force_match: bool = False,
+        download_type: DownloadTypeInput = None,
+        source_type: DownloadSourceInput = None,
+        source_name: Union[str, None] = None,
+        web_title: Union[str, None] = None
     ) -> Tuple[List[dict], Union[EnqueuingDownloadFailureReason, None]]:
         """Add a download to the queue.
 
@@ -450,8 +539,12 @@ class DownloadHandler(metaclass=Singleton):
             LOGGER.info('Download already in queue')
             return [], None
 
-        link_type = self.__determine_link_type(link)
+        link_type = self.__determine_link_type(link, download_type, source_type)
         downloads: List[Download] = []
+        if link_type is None:
+            LOGGER.warning('Unsupported download link: %s', link)
+            return [], EnqueuingDownloadFailureReason.UNSUPPORTED_LINK
+
         if link_type == 'usenet':
             covered_issues = (
                 Issue(issue_id, check_existence=True)
@@ -463,15 +556,69 @@ class DownloadHandler(metaclass=Singleton):
                 download_link=link,
                 volume_id=volume_id,
                 covered_issues=covered_issues,
-                source_type=DownloadSource.USENET,
-                source_name=DownloadSource.USENET.value,
+                source_type=_normalise_download_source(
+                    source_type,
+                    DownloadSource.USENET
+                ),
+                source_name=source_name or DownloadSource.USENET.value,
                 web_link=link,
-                web_title=None,
+                web_title=web_title,
                 web_sub_title=None,
                 forced_match=force_match,
                 external_client=ExternalClients.get_least_used_client(
                     DownloadType.USENET
                 )
+            )]
+
+        elif link_type == 'torrent':
+            if not link.lower().startswith('magnet:'):
+                LOGGER.warning('Unsupported non-magnet torrent link: %s', link)
+                return [], EnqueuingDownloadFailureReason.UNSUPPORTED_LINK
+
+            covered_issues = (
+                Issue(issue_id, check_existence=True)
+                .get_data()
+                .calculated_issue_number
+                if issue_id else None
+            )
+            downloads = [TorrentDownload(
+                download_link=link,
+                volume_id=volume_id,
+                covered_issues=covered_issues,
+                source_type=_normalise_download_source(
+                    source_type,
+                    DownloadSource.TORRENT
+                ),
+                source_name=source_name or DownloadSource.TORRENT.value,
+                web_link=link,
+                web_title=web_title,
+                web_sub_title=None,
+                forced_match=force_match,
+                external_client=ExternalClients.get_least_used_client(
+                    DownloadType.TORRENT
+                )
+            )]
+
+        elif link_type == 'direct':
+            covered_issues = (
+                Issue(issue_id, check_existence=True)
+                .get_data()
+                .calculated_issue_number
+                if issue_id else None
+            )
+            downloads = [DirectDownload(
+                download_link=link,
+                volume_id=volume_id,
+                covered_issues=covered_issues,
+                source_type=_normalise_download_source(
+                    source_type,
+                    DownloadSource.DIRECT
+                ),
+                source_name=source_name or DownloadSource.DIRECT.value,
+                web_link=link,
+                web_title=web_title,
+                web_sub_title=None,
+                forced_match=force_match
             )]
 
         elif link_type == 'gc':
@@ -530,12 +677,19 @@ class DownloadHandler(metaclass=Singleton):
 
     def add_multiple(
         self,
-        add_args: Iterable[Tuple[str, int, Union[int, None], bool]]
+        add_args: Iterable[
+            Union[
+                Tuple[str, int, Union[int, None], bool],
+                Tuple[str, int, Union[int, None], bool, Dict[str, Any]]
+            ]
+        ]
     ) -> None:
         async def add_wrapper():
             await gather(
-                *(self.add(*entry)
-                for entry in add_args)
+                *(
+                    self.add(*entry[:4], **(entry[4] if len(entry) > 4 else {}))
+                    for entry in add_args
+                )
             )
 
         run(add_wrapper())

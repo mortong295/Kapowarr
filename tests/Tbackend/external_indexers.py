@@ -120,6 +120,9 @@ class indexer_clients(unittest.TestCase):
         self.assertEqual(len(mapped), 1)
         self.assertEqual(mapped[0]['link'], 'http://prowlarr/download/1')
         self.assertEqual(mapped[0]['source'], 'NZBFinder')
+        self.assertEqual(mapped[0]['download_type'], 'usenet')
+        self.assertEqual(mapped[0]['source_type'], 'Usenet')
+        self.assertEqual(mapped[0]['source_name'], 'NZBFinder')
         self.assertEqual(mapped[0]['issue_number'], 1.0)
 
     def test_newznab_search_mapping_uses_release_link(self):
@@ -132,4 +135,7 @@ class indexer_clients(unittest.TestCase):
         self.assertEqual(len(mapped), 1)
         self.assertEqual(mapped[0]['link'], 'https://indexer/api?t=get&id=abc')
         self.assertEqual(mapped[0]['source'], 'NZBgeek')
+        self.assertEqual(mapped[0]['download_type'], 'usenet')
+        self.assertEqual(mapped[0]['source_type'], 'Usenet')
+        self.assertEqual(mapped[0]['source_name'], 'NZBgeek')
         self.assertEqual(mapped[0]['issue_number'], 1.0)

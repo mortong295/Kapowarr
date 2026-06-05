@@ -15,9 +15,9 @@
 		<header class="arr-header">
 			<div>
 				<h1>Calendar</h1>
-				<p>Upcoming comic releases for known volumes. This V1 page establishes the *arr-style calendar surface and is ready for pull-list providers.</p>
+				<p>Upcoming comic releases for known volumes and synced pull-list providers.</p>
 			</div>
-			<span class="arr-badge">V1 UX skeleton</span>
+			<span class="arr-badge">Calendar</span>
 		</header>
 		<section class="arr-panel">
 			<div class="arr-panel-header">
@@ -41,7 +41,10 @@
 		<section class="arr-panel arr-section-gap">
 			<div class="arr-panel-header">
 				<h2>Pull List</h2>
-				<p id="calendar-pull-summary">Loading pull-list items…</p>
+				<div>
+					<p id="calendar-pull-summary">Loading pull-list items…</p>
+					<button id="calendar-sync-button" type="button">Sync Import Lists</button>
+				</div>
 			</div>
 			<table class="arr-table">
 				<thead>

@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from threading import Thread, Timer
 from time import sleep, time
-from typing import Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Tuple, Type, Union
 
 from flask import Flask
 
@@ -31,6 +31,34 @@ from backend.implementations.volumes import Library, Volume, refresh_and_scan
 from backend.internals.db import close_db, get_db
 from backend.internals.server import (TaskAddedEvent, TaskEndedEvent,
                                       TaskStatusEvent, WebSocket)
+
+
+DownloadTaskResult = List[
+    Tuple[str, int, Union[int, None], bool, Dict[str, Any]]
+]
+
+
+def _download_args_from_result(
+    result: Dict[str, Any],
+    volume_id: int,
+    issue_id: Union[int, None]
+) -> Tuple[str, int, Union[int, None], bool, Dict[str, Any]]:
+    return (
+        result['link'],
+        volume_id,
+        issue_id,
+        False,
+        {
+            key: value
+            for key, value in {
+                'download_type': result.get('download_type'),
+                'source_type': result.get('source_type'),
+                'source_name': result.get('source_name') or result.get('source'),
+                'web_title': result.get('display_title')
+            }.items()
+            if value not in (None, '')
+        }
+    )
 
 
 class Task(ABC):
@@ -55,14 +83,13 @@ class Task(ABC):
         ...
 
     @abstractmethod
-    def run(self) -> Union[None, List[Tuple[str, int, Union[int, None]]]]:
+    def run(self) -> Union[None, DownloadTaskResult]:
         """Run the task
 
         Returns:
-            Union[None, List[Tuple[str, int, Union[int, None]]]]:
+            Union[None, DownloadTaskResult]:
             Either `None` if the task has no result or
-            `List[Tuple[str, int, Union[int, None]]]` if the task returns
-            search results.
+            download queue argument tuples if the task returns search results.
         """
         ...
 
@@ -99,7 +126,7 @@ class AutoSearchIssue(Task):
         self._issue_id = issue_id
         return
 
-    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+    def run(self) -> DownloadTaskResult:
         volume = Volume(self._volume_id)
         volume_title = volume.vd.title
         issue_number = volume.get_issue(self._issue_id).get_data().issue_number
@@ -110,7 +137,11 @@ class AutoSearchIssue(Task):
         results = auto_search(self._volume_id, self._issue_id)
         if results:
             return [
-                (result['link'], self._volume_id, self._issue_id)
+                _download_args_from_result(
+                    result,
+                    self._volume_id,
+                    self._issue_id
+                )
                 for result in results
             ]
         return []
@@ -255,7 +286,7 @@ class AutoSearchVolume(Task):
         self._volume_id = volume_id
         return
 
-    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+    def run(self) -> DownloadTaskResult:
         volume_title = Volume(self._volume_id).vd.title
         self.message = f'Searching for {volume_title}'
         WebSocket().emit(TaskStatusEvent(self.message))
@@ -264,7 +295,7 @@ class AutoSearchVolume(Task):
         results = auto_search(self._volume_id)
         if results:
             return [
-                (result['link'], self._volume_id, None)
+                _download_args_from_result(result, self._volume_id, None)
                 for result in results
             ]
         return []
@@ -574,10 +605,10 @@ class SearchPullList(Task):
     def __init__(self) -> None:
         return
 
-    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+    def run(self) -> DownloadTaskResult:
         pull_list_items = get_searchable_pull_list_items()
         ws = WebSocket()
-        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        downloads: DownloadTaskResult = []
         for item in pull_list_items:
             if self.stop:
                 break
@@ -595,7 +626,11 @@ class SearchPullList(Task):
             if results:
                 update_pull_list_item_status(item['id'], 'queued')
             downloads.extend(
-                (result['link'], item['volume_id'], item['issue_id'])
+                _download_args_from_result(
+                    result,
+                    item['volume_id'],
+                    item['issue_id']
+                )
                 for result in results
             )
         return downloads
@@ -621,10 +656,10 @@ class SearchWantedCutoffUnmet(Task):
     def __init__(self) -> None:
         return
 
-    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+    def run(self) -> DownloadTaskResult:
         cutoff_unmet = get_cutoff_unmet_issues()
         ws = WebSocket()
-        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        downloads: DownloadTaskResult = []
         for issue in cutoff_unmet:
             if self.stop:
                 break
@@ -635,7 +670,11 @@ class SearchWantedCutoffUnmet(Task):
             ws.emit(TaskStatusEvent(self.message))
             results = auto_search(issue['volume_id'], issue['issue_id'])
             downloads.extend(
-                (result['link'], issue['volume_id'], issue['issue_id'])
+                _download_args_from_result(
+                    result,
+                    issue['volume_id'],
+                    issue['issue_id']
+                )
                 for result in results
             )
         return downloads
@@ -661,7 +700,7 @@ class SearchWantedMissing(Task):
     def __init__(self) -> None:
         return
 
-    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+    def run(self) -> DownloadTaskResult:
         cursor = get_db(force_new=True)
         missing = cursor.execute(
             """
@@ -682,7 +721,7 @@ class SearchWantedMissing(Task):
         ).fetchalldict()
 
         ws = WebSocket()
-        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        downloads: DownloadTaskResult = []
         for issue in missing:
             if self.stop:
                 break
@@ -693,7 +732,11 @@ class SearchWantedMissing(Task):
             ws.emit(TaskStatusEvent(self.message))
             results = auto_search(issue['volume_id'], issue['issue_id'])
             downloads.extend(
-                (result['link'], issue['volume_id'], issue['issue_id'])
+                _download_args_from_result(
+                    result,
+                    issue['volume_id'],
+                    issue['issue_id']
+                )
                 for result in results
             )
         return downloads
@@ -719,7 +762,7 @@ class SearchStoryArcMissing(Task):
     def __init__(self) -> None:
         return
 
-    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+    def run(self) -> DownloadTaskResult:
         cursor = get_db(force_new=True)
         missing = cursor.execute(
             """
@@ -743,7 +786,7 @@ class SearchStoryArcMissing(Task):
         ).fetchalldict()
 
         ws = WebSocket()
-        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        downloads: DownloadTaskResult = []
         seen = set()
         for issue in missing:
             if self.stop:
@@ -759,7 +802,11 @@ class SearchStoryArcMissing(Task):
             ws.emit(TaskStatusEvent(self.message))
             results = auto_search(issue['volume_id'], issue['issue_id'])
             downloads.extend(
-                (result['link'], issue['volume_id'], issue['issue_id'])
+                _download_args_from_result(
+                    result,
+                    issue['volume_id'],
+                    issue['issue_id']
+                )
                 for result in results
             )
         return downloads
@@ -785,12 +832,12 @@ class SearchAll(Task):
     def __init__(self) -> None:
         return
 
-    def run(self) -> List[Tuple[str, int, Union[int, None]]]:
+    def run(self) -> DownloadTaskResult:
         cursor = get_db(force_new=True)
         cursor.execute(
             "SELECT id, title FROM volumes WHERE monitored = 1;"
         )
-        downloads: List[Tuple[str, int, Union[int, None]]] = []
+        downloads: DownloadTaskResult = []
         ws = WebSocket()
         for volume_id, volume_title in cursor:
             if self.stop:
@@ -801,7 +848,7 @@ class SearchAll(Task):
             results = auto_search(volume_id)
             if results:
                 downloads += [
-                    (result['link'], volume_id, None)
+                    _download_args_from_result(result, volume_id, None)
                     for result in results
                 ]
         return downloads
@@ -852,10 +899,7 @@ class TaskHandler(metaclass=Singleton):
 
                 if not task.stop:
                     if task.category == 'download' and result:
-                        DownloadHandler().add_multiple(
-                            (link, volume_id, issue_id, False)
-                            for link, volume_id, issue_id in result
-                        )
+                        DownloadHandler().add_multiple(result)
 
                     LOGGER.info(f'Finished task {task.display_title}')
 

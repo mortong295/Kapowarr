@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from os.path import basename, exists, isfile, join, splitext
 from time import time
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from backend.base.definitions import (BlocklistReason,
                                       DownloadState, FileConstants)
@@ -112,6 +112,39 @@ def notify_download_failed(download: Download) -> None:
         'title': 'Download failed',
         'message': f'Failed to download {download.title or download.web_title}'
     })
+    return
+
+
+def queue_replacement_download(download: Download) -> None:
+    from backend.features.download_queue import DownloadHandler
+    from backend.features.search import auto_search
+
+    LOGGER.info('Searching replacement for failed download: %s', download.id)
+    results = auto_search(download.volume_id, download.issue_id)
+    for result in results:
+        if result['link'] in (download.web_link, download.download_link):
+            continue
+
+        metadata: Dict[str, Any] = {
+            key: value
+            for key, value in {
+                'download_type': result.get('download_type'),
+                'source_type': result.get('source_type'),
+                'source_name': result.get('source_name') or result.get('source'),
+                'web_title': result.get('display_title')
+            }.items()
+            if value not in (None, '')
+        }
+        DownloadHandler().add_multiple([(
+            result['link'],
+            download.volume_id,
+            download.issue_id,
+            False,
+            metadata
+        )])
+        return
+
+    LOGGER.info('No replacement found for failed download: %s', download.id)
     return
 
 
@@ -354,6 +387,7 @@ class PostProcessor:
         add_to_history,
         notify_download_failed,
         add_dl_to_blocklist,
+        queue_replacement_download,
         delete_file
     ]
 

@@ -62,7 +62,7 @@ usingApiKey().then(api_key => {
 			monitored: document.querySelector('#story-arc-monitored').checked,
 			issues: parseIssueLines(document.querySelector('#story-arc-issues').value)
 		};
-		sendAPI('POST', '/storyarcs', api_key, payload)
+		sendAPI('POST', '/storyarcs', api_key, {}, payload)
 			.then(response => response.json())
 			.then(() => {
 				form.reset();

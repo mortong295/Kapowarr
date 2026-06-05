@@ -5,6 +5,70 @@ const providerImplementations = {
 	connections: ['webhook', 'discord', 'gotify', 'plex', 'jellyfin'],
 	importlists: ['json', 'csv', 'pulllist', 'mylar', 'comicvine']
 };
+const providerDefaults = {
+	indexers: {
+		getcomics: {
+			description: 'Built-in GetComics source. No extra settings are required.',
+			settings: {source: 'GetComics'}
+		},
+		newznab: {
+			description: 'Newznab-compatible usenet indexer. Use the base site URL; Kapowarr appends /api.',
+			settings: {base_url: '', api_key: '', categories: '7030'}
+		},
+		torznab: {
+			description: 'Torznab-compatible torrent indexer. Use Prowlarr or Jackett category IDs where needed.',
+			settings: {base_url: '', api_key: '', categories: '7030'}
+		},
+		rawrss: {
+			description: 'Plain RSS or Atom feed searched by title terms.',
+			settings: {feed_url: ''}
+		}
+	},
+	connections: {
+		webhook: {
+			description: 'POST the full Kapowarr event payload to another automation endpoint.',
+			settings: {url: '', headers: {}}
+		},
+		discord: {
+			description: 'Send grab/import/failure events to a Discord webhook.',
+			settings: {webhook_url: ''}
+		},
+		gotify: {
+			description: 'Send notifications to Gotify.',
+			settings: {base_url: '', token: '', priority: 5}
+		},
+		plex: {
+			description: 'Refresh a Plex library section after Kapowarr events. Omit section_id to refresh all sections.',
+			settings: {base_url: '', token: '', section_id: 'all'}
+		},
+		jellyfin: {
+			description: 'Refresh Jellyfin after Kapowarr events. Omit item_id for a full library refresh.',
+			settings: {base_url: '', api_key: '', item_id: ''}
+		}
+	},
+	importlists: {
+		json: {
+			description: 'JSON list with an items or pull_list array.',
+			settings: {url: '', items: []}
+		},
+		csv: {
+			description: 'CSV with release_date,publisher,series,issue_number,title columns.',
+			settings: {url: '', body: ''}
+		},
+		pulllist: {
+			description: 'Weekly pull-list feed in RSS, JSON, or CSV format.',
+			settings: {url: '', format: 'rss'}
+		},
+		mylar: {
+			description: 'Mylar-compatible exported watch/pull list JSON.',
+			settings: {url: '', items: []}
+		},
+		comicvine: {
+			description: 'ComicVine list import source. Use a pre-exported JSON list until API-backed list sync lands.',
+			settings: {items: []}
+		}
+	}
+};
 let apiKey = null;
 let currentItems = [];
 let editingItem = null;
@@ -48,6 +112,7 @@ function resetForm() {
 	document.querySelector('#profile-cutoff-input').value = 'cbz';
 	document.querySelector('#profile-allowed-input').value = 'cbz,cbr,pdf,epub';
 	document.querySelector('#profile-preferred-input').value = 'cbz,cbr';
+	updateImplementationHelp();
 };
 
 function featureLabel() {
@@ -71,6 +136,32 @@ function providerPayload() {
 	};
 };
 
+function implementationDefault() {
+	const implementation = document.querySelector('#provider-implementation-input').value;
+	return (providerDefaults[feature] || {})[implementation] || null;
+};
+
+function updateImplementationHelp(fill=false) {
+	const help = document.querySelector('#provider-settings-help');
+	if (!help) return;
+	const preset = implementationDefault();
+	if (!preset) {
+		help.innerHTML = '';
+		return;
+	};
+	help.innerHTML = `
+		<strong>${preset.description}</strong>
+		<code></code>
+	`;
+	help.querySelector('code').innerText = JSON.stringify(preset.settings, null, 2);
+	if (fill && !editingItem)
+		document.querySelector('#provider-settings-input').value = JSON.stringify(
+			preset.settings,
+			null,
+			2
+		);
+};
+
 function profilePayload() {
 	return {
 		name: document.querySelector('#profile-name-input').value,
@@ -91,6 +182,7 @@ function fillProviderForm(item) {
 	document.querySelector('#provider-settings-input').value = JSON.stringify(item.settings || {}, null, 2);
 	document.querySelector('#provider-tags-input').value = (item.tags || []).join(',');
 	document.querySelector('#provider-events-input').value = (item.events || []).join(',');
+	updateImplementationHelp();
 };
 
 function fillProfileForm(item) {
@@ -216,12 +308,14 @@ function saveItem(event) {
 
 function buildImplementationOptions() {
 	const select = document.querySelector('#provider-implementation-input');
+	select.innerHTML = '';
 	(providerImplementations[feature] || []).forEach(implementation => {
 		const option = document.createElement('option');
 		option.value = implementation;
 		option.innerText = implementation;
 		select.appendChild(option);
 	});
+	select.onchange = () => updateImplementationHelp(true);
 };
 
 function setupFeatureForm() {

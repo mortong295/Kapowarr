@@ -70,7 +70,10 @@ class wanted_search_tasks(unittest.TestCase):
         result = SearchWantedMissing().run()
 
         self.assertEqual(self.calls, [(1, 1)])
-        self.assertEqual(result, [('https://example.invalid/1/1', 1, 1)])
+        self.assertEqual(
+            result,
+            [('https://example.invalid/1/1', 1, 1, False, {})]
+        )
 
     def test_search_wanted_cutoff_unmet_returns_downloads_for_upgradeable_issue(self):
         cursor = get_db()
@@ -86,7 +89,10 @@ class wanted_search_tasks(unittest.TestCase):
         result = SearchWantedCutoffUnmet().run()
 
         self.assertEqual(self.calls, [(1, 1)])
-        self.assertEqual(result, [('https://example.invalid/1/1', 1, 1)])
+        self.assertEqual(
+            result,
+            [('https://example.invalid/1/1', 1, 1, False, {})]
+        )
 
     def test_search_story_arc_missing_deduplicates_matched_issues(self):
         cursor = get_db()
@@ -114,7 +120,10 @@ class wanted_search_tasks(unittest.TestCase):
         result = SearchStoryArcMissing().run()
 
         self.assertEqual(self.calls, [(1, 1)])
-        self.assertEqual(result, [('https://example.invalid/1/1', 1, 1)])
+        self.assertEqual(
+            result,
+            [('https://example.invalid/1/1', 1, 1, False, {})]
+        )
 
 
 if __name__ == '__main__':
