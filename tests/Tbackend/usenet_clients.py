@@ -99,6 +99,19 @@ class sabnzbd_mapping(unittest.TestCase):
         self.assertEqual(mapped['completed_path'], '/downloads/comics/Batman 001')
         self.assertEqual(mapped['download_time'], 123)
 
+    def test_history_extracting_is_still_downloading(self):
+        mapped = SABnzbd._map_history_item({
+            'nzo_id': 'SAB-6',
+            'name': 'Batman 006',
+            'status': 'Extracting',
+            'category': 'comics',
+            'storage': '',
+            'download_time': 0
+        })
+        self.assertEqual(mapped['external_id'], 'SAB-6')
+        self.assertEqual(mapped['status'], 'downloading')
+        self.assertEqual(mapped['completed_path'], '')
+
 
 class usenet_processing(unittest.TestCase):
     def test_uses_complete_postprocessor_when_torrent_copy_is_configured(self):

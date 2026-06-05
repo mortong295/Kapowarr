@@ -27,6 +27,12 @@ class SABnzbd(BaseExternalClient):
         'downloading': DownloadState.DOWNLOADING_STATE,
         'running': DownloadState.DOWNLOADING_STATE,
         'fetching': DownloadState.DOWNLOADING_STATE,
+        'checking': DownloadState.DOWNLOADING_STATE,
+        'verifying': DownloadState.DOWNLOADING_STATE,
+        'repairing': DownloadState.DOWNLOADING_STATE,
+        'extracting': DownloadState.DOWNLOADING_STATE,
+        'unpacking': DownloadState.DOWNLOADING_STATE,
+        'moving': DownloadState.DOWNLOADING_STATE,
         'completed': DownloadState.IMPORTING_STATE,
         'complete': DownloadState.IMPORTING_STATE,
         'failed': DownloadState.FAILED_STATE
