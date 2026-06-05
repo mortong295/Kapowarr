@@ -7,8 +7,10 @@ from backend.features import tasks
 from backend.features.tasks import (SearchStoryArcMissing,
                                     SearchWantedCutoffUnmet,
                                     SearchWantedMissing)
+from backend.implementations.arr_features import count_cutoff_unmet_issues
 from backend.internals.db import close_db, get_db, set_db_location, setup_db
 from backend.internals.server import Server
+from frontend import api as api_module
 
 
 class wanted_search_tasks(unittest.TestCase):
@@ -75,6 +77,17 @@ class wanted_search_tasks(unittest.TestCase):
             [('https://example.invalid/1/1', 1, 1, False, {})]
         )
 
+    def test_missing_issue_count_matches_paginated_items(self):
+        self.assertEqual(api_module._missing_issue_count(), 1)
+        self.assertEqual(
+            len(api_module._missing_issues(limit=1, offset=0)),
+            1
+        )
+        self.assertEqual(
+            len(api_module._missing_issues(limit=1, offset=1)),
+            0
+        )
+
     def test_search_wanted_cutoff_unmet_returns_downloads_for_upgradeable_issue(self):
         cursor = get_db()
         cursor.execute(
@@ -93,6 +106,19 @@ class wanted_search_tasks(unittest.TestCase):
             result,
             [('https://example.invalid/1/1', 1, 1, False, {})]
         )
+
+    def test_cutoff_unmet_count_matches_quality_decision(self):
+        cursor = get_db()
+        cursor.execute(
+            "INSERT INTO files(id, filepath, size) VALUES(?,?,?);",
+            (1, '/tmp/library/Batman/Batman 001.pdf', 100)
+        )
+        cursor.execute(
+            "INSERT INTO issues_files(file_id, issue_id) VALUES(?, ?);",
+            (1, 1)
+        )
+
+        self.assertEqual(count_cutoff_unmet_issues(), 1)
 
     def test_search_story_arc_missing_deduplicates_matched_issues(self):
         cursor = get_db()

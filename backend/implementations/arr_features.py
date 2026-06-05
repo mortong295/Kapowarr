@@ -387,6 +387,17 @@ def get_cutoff_unmet_issues(
     return unmet[offset:offset + limit]
 
 
+def count_cutoff_unmet_issues(
+    quality_profile_id: Union[int, None] = None
+) -> int:
+    """Return the total number of downloaded monitored issues below cutoff."""
+    return len(get_cutoff_unmet_issues(
+        limit=10 ** 9,
+        offset=0,
+        quality_profile_id=quality_profile_id
+    ))
+
+
 # region Provider-backed settings
 PROVIDER_TABLES = {
     'indexers': 'arr_indexers',
@@ -559,6 +570,95 @@ def delete_provider(feature: str, id: int) -> None:
     return
 
 
+PROVIDER_REQUIRED_SETTINGS = {
+    ('indexers', 'newznab'): (
+        ('base_url', ('base_url', 'url')),
+        ('api_key', ('api_key', 'token')),
+        ('categories', ('categories',))
+    ),
+    ('indexers', 'torznab'): (
+        ('base_url', ('base_url', 'url')),
+        ('api_key', ('api_key', 'token')),
+        ('categories', ('categories',))
+    ),
+    ('indexers', 'prowlarr'): (
+        ('base_url', ('base_url', 'url')),
+        ('api_key', ('api_key', 'token')),
+        ('categories', ('categories',))
+    ),
+    ('indexers', 'rawrss'): (
+        ('feed_url', ('feed_url', 'url')),
+    ),
+    ('connections', 'webhook'): (
+        ('url', ('url', 'webhook_url')),
+    ),
+    ('connections', 'discord'): (
+        ('webhook_url', ('webhook_url', 'url')),
+    ),
+    ('connections', 'gotify'): (
+        ('base_url', ('base_url', 'url')),
+        ('token', ('token', 'api_key'))
+    ),
+    ('connections', 'emby'): (
+        ('base_url', ('base_url', 'url')),
+        ('api_key', ('api_key', 'token', 'emby_api_key'))
+    ),
+    ('connections', 'plex'): (
+        ('base_url', ('base_url', 'url')),
+        ('token', ('token', 'api_key', 'plex_token'))
+    ),
+    ('connections', 'jellyfin'): (
+        ('base_url', ('base_url', 'url')),
+        ('api_key', ('api_key', 'token', 'jellyfin_api_key'))
+    ),
+    ('importlists', 'json'): (
+        ('url, body, or items', ('url', 'body', 'items')),
+    ),
+    ('importlists', 'csv'): (
+        ('url or body', ('url', 'body')),
+    ),
+    ('importlists', 'pulllist'): (
+        ('url', ('url', 'feed_url')),
+    ),
+    ('importlists', 'mylar'): (
+        ('url or body', ('url', 'body', 'items')),
+    ),
+    ('importlists', 'comicvine'): (
+        (
+            'story_arc_ids, volume_ids, or items',
+            ('story_arc_ids', 'story_arcs', 'volume_ids', 'volumes', 'items')
+        ),
+    )
+}
+
+
+def _has_setting(settings: Mapping[str, Any], keys: Iterable[str]) -> bool:
+    for key in keys:
+        value = settings.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+        if isinstance(value, (list, tuple, dict)) and value:
+            return True
+        if value not in (None, '') and not isinstance(value, (str, list, tuple, dict)):
+            return True
+    return False
+
+
+def _provider_validation_errors(
+    feature: str,
+    implementation: str,
+    settings: Mapping[str, Any]
+) -> List[str]:
+    return [
+        label
+        for label, keys in PROVIDER_REQUIRED_SETTINGS.get(
+            (feature, implementation),
+            ()
+        )
+        if not _has_setting(settings, keys)
+    ]
+
+
 def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
     implementation = data.get('implementation') or data.get('type')
     if not implementation:
@@ -577,6 +677,22 @@ def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
     }
     implementation = str(implementation).lower()
     is_supported = implementation in supported[feature]
+    settings = data.get('settings') or {}
+    if not isinstance(settings, dict):
+        settings = {}
+
+    if is_supported:
+        missing = _provider_validation_errors(feature, implementation, settings)
+        if missing:
+            return {
+                'status': 'failed',
+                'implementation': implementation,
+                'message': (
+                    'Missing required setting(s): '
+                    + ', '.join(missing)
+                    + '.'
+                )
+            }
 
     if feature == 'connections' and is_supported:
         payload = {
@@ -584,7 +700,6 @@ def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
             'title': 'Kapowarr test notification',
             'message': 'Connection settings were validated by Kapowarr.'
         }
-        settings = data.get('settings') or {}
         if isinstance(settings, dict) and settings.get('send_test'):
             result = _send_connection(
                 {'name': data.get('name') or implementation,
@@ -602,7 +717,7 @@ def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
         'status': 'ok' if is_supported else 'unsupported',
         'implementation': implementation,
         'message': (
-            'Provider type is recognised and can be saved.'
+            'Provider type is recognised and required settings are present.'
             if is_supported else
             'Provider type is not recognised by the V1 provider registry.'
         )

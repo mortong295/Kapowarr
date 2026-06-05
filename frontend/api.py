@@ -3,6 +3,7 @@
 from asyncio import run
 from datetime import datetime, timedelta
 from io import BytesIO
+from os import environ
 from os.path import isdir
 from typing import Any, Dict, List, Tuple, Type, Union
 
@@ -29,6 +30,7 @@ from backend.features.tasks import (Task, TaskHandler,
                                     delete_task_history, get_task_history,
                                     get_task_planning, task_library)
 from backend.implementations.arr_features import (comicinfo_xml,
+                                                  count_cutoff_unmet_issues,
                                                   delete_profile,
                                                   delete_provider,
                                                   delete_pull_list_item,
@@ -367,12 +369,16 @@ def _system_health() -> Dict[str, Any]:
             'action': action
         })
 
+    comicvine_key_configured = bool(
+        settings.comicvine_api_key
+        or environ.get('COMICVINE_API_KEY')
+    )
     add_check(
         'comicvine_api_key',
-        'ok' if settings.comicvine_api_key else 'warning',
+        'ok' if comicvine_key_configured else 'warning',
         (
             'ComicVine API key is configured.'
-            if settings.comicvine_api_key else
+            if comicvine_key_configured else
             'ComicVine API key is missing; metadata refresh will be limited.'
         ),
         'Add a ComicVine API key in Settings.'
@@ -909,7 +915,7 @@ def _arr_feature_cards(feature: str) -> List[Dict[str, Any]]:
         "importlists": [
             {
                 "name": "ComicVine Lists",
-                "status": "planned",
+                "status": "available",
                 "description": (
                     "Auto-add volumes from publishers, characters, "
                     "teams, story arcs, and curated lists."
@@ -925,7 +931,7 @@ def _arr_feature_cards(feature: str) -> List[Dict[str, Any]]:
             },
             {
                 "name": "Mylar Migration",
-                "status": "planned",
+                "status": "available",
                 "description": (
                     "Import existing Mylar watchlists and apply "
                     "Kapowarr root folders, profiles, and tags."
@@ -986,6 +992,32 @@ def _missing_issues(
         """,
         tuple(params)
     ).fetchalldict()
+
+
+def _missing_issue_count(
+    quality_profile_id: Union[int, None] = None
+) -> int:
+    profile_filter = ''
+    params: List[Any] = []
+    if quality_profile_id is not None:
+        profile_filter = 'AND v.quality_profile_id = ?'
+        params.append(quality_profile_id)
+
+    return int(get_db().execute(f"""
+        SELECT COUNT(DISTINCT i.id)
+        FROM issues i
+        INNER JOIN volumes v
+            ON i.volume_id = v.id
+        LEFT JOIN issues_files if
+            ON i.id = if.issue_id
+        WHERE
+            v.monitored = 1
+            AND i.monitored = 1
+            AND if.issue_id IS NULL
+            {profile_filter};
+        """,
+        tuple(params)
+    ).fetchone()[0] or 0)
 
 
 def _calendar_issues(days: int = 90, limit: int = 200) -> List[Dict[str, Any]]:
@@ -1073,18 +1105,26 @@ def api_wanted_missing():
     )
     limit = extract_key(request, 'limit', False) or 50
     offset = extract_key(request, 'offset', False) or 0
+    missing_items = _missing_issues(
+        limit=limit,
+        offset=offset,
+        quality_profile_id=quality_profile_id
+    )
+    cutoff_items = get_cutoff_unmet_issues(
+        limit=limit,
+        offset=offset,
+        quality_profile_id=quality_profile_id
+    )
     return return_api({
-        'items': _missing_issues(
-            limit=limit,
-            offset=offset,
-            quality_profile_id=quality_profile_id
-        ),
+        'items': missing_items,
+        'total': _missing_issue_count(quality_profile_id),
+        'limit': limit,
+        'offset': offset,
         'cutoff_unmet': {
-            'items': get_cutoff_unmet_issues(
-                limit=limit,
-                offset=offset,
-                quality_profile_id=quality_profile_id
-            )
+            'items': cutoff_items,
+            'total': count_cutoff_unmet_issues(quality_profile_id),
+            'limit': limit,
+            'offset': offset
         }
     })
 
@@ -1100,12 +1140,16 @@ def api_wanted_cutoff_unmet():
     )
     limit = extract_key(request, 'limit', False) or 50
     offset = extract_key(request, 'offset', False) or 0
+    items = get_cutoff_unmet_issues(
+        limit=limit,
+        offset=offset,
+        quality_profile_id=quality_profile_id
+    )
     return return_api({
-        'items': get_cutoff_unmet_issues(
-            limit=limit,
-            offset=offset,
-            quality_profile_id=quality_profile_id
-        )
+        'items': items,
+        'total': count_cutoff_unmet_issues(quality_profile_id),
+        'limit': limit,
+        'offset': offset
     })
 
 

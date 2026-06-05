@@ -158,6 +158,7 @@ const providerSchemas = {
 let apiKey = null;
 let currentItems = [];
 let editingItem = null;
+let mylarPreview = null;
 
 function parseList(value) {
 	return value.split(',')
@@ -449,6 +450,146 @@ function loadItems() {
 		});
 };
 
+function setMylarFeedback(message, error=false) {
+	const feedback = document.querySelector('#mylar-import-feedback');
+	if (!feedback) return;
+	feedback.innerText = message;
+	feedback.classList.toggle('error', error);
+};
+
+function mylarExportBody() {
+	const raw = document.querySelector('#mylar-import-export').value.trim();
+	if (!raw) throw new Error('Paste a Mylar export JSON payload first.');
+	return raw;
+};
+
+function renderMylarResult(result, applied=false) {
+	const output = document.querySelector('#mylar-import-result');
+	if (!output) return;
+	const preview = result.preview || result;
+	const summary = preview.summary || {};
+	const lines = [
+		`${applied ? 'Applied' : 'Previewed'} Mylar migration`,
+		`Volumes: ${summary.volumes || 0}`,
+		`Pull-list items: ${summary.pull_list_items || 0}`,
+		`Story arcs: ${summary.story_arcs || 0}`,
+		`Root folders detected: ${summary.root_folders || 0}`
+	];
+	const appliedResult = result.results || result;
+	if (applied) {
+		lines.push(`Added volumes: ${(appliedResult.volumes || []).filter(volume => volume.status === 'added').length}`);
+		lines.push(`Existing volumes: ${(appliedResult.volumes || []).filter(volume => volume.status === 'existing').length}`);
+		lines.push(`Pull-list imports: ${(appliedResult.pull_list || []).length}`);
+		lines.push(`Story arc imports: ${(appliedResult.story_arcs || []).length}`);
+	};
+	(result.warnings || preview.warnings || []).forEach(warning => {
+		lines.push(`Warning: ${warning}`);
+	});
+	(result.errors || []).forEach(error => {
+		lines.push(`Skipped: ${error.message || error.title || 'Unable to import item'}`);
+	});
+	output.innerText = lines.join('\n');
+	output.classList.remove('hidden');
+};
+
+function mylarOptions() {
+	const rootFolder = document.querySelector('#mylar-import-root-folder').value;
+	const qualityProfile = document.querySelector('#mylar-import-quality-profile').value;
+	return {
+		root_folder_id: rootFolder ? parseInt(rootFolder) : null,
+		quality_profile_id: qualityProfile ? parseInt(qualityProfile) : null,
+		add_volumes: document.querySelector('#mylar-import-add-volumes').checked,
+		import_pull_list: document.querySelector('#mylar-import-pull-list').checked,
+		import_story_arcs: document.querySelector('#mylar-import-story-arcs').checked,
+		monitor: document.querySelector('#mylar-import-monitor').checked,
+		monitor_new_issues: true,
+		auto_search: document.querySelector('#mylar-import-auto-search').checked
+	};
+};
+
+function previewMylarImport() {
+	let body;
+	try {
+		body = mylarExportBody();
+	} catch (error) {
+		setMylarFeedback(error.message, true);
+		return;
+	};
+	sendAPI('POST', '/importlists/mylar/preview', apiKey, {}, {export: body})
+		.then(response => response.json())
+		.then(json => {
+			mylarPreview = json.result;
+			document.querySelector('#mylar-import-apply-button').disabled = false;
+			setMylarFeedback('Preview ready. Review the counts before applying.');
+			renderMylarResult(mylarPreview);
+		})
+		.catch(() => setMylarFeedback('Unable to preview Mylar export.', true));
+};
+
+function applyMylarImport() {
+	let body;
+	try {
+		body = mylarExportBody();
+	} catch (error) {
+		setMylarFeedback(error.message, true);
+		return;
+	};
+	if (!mylarPreview) {
+		setMylarFeedback('Preview the Mylar export before applying it.', true);
+		return;
+	};
+	const button = document.querySelector('#mylar-import-apply-button');
+	button.disabled = true;
+	button.innerText = 'Applying...';
+	sendAPI('POST', '/importlists/mylar/apply', apiKey, {}, {
+		export: body,
+		options: mylarOptions()
+	})
+		.then(response => response.json())
+		.then(json => {
+			setMylarFeedback('Mylar import applied.');
+			renderMylarResult(json.result, true);
+			return loadItems();
+		})
+		.catch(() => setMylarFeedback('Unable to apply Mylar import.', true))
+		.finally(() => {
+			button.disabled = false;
+			button.innerText = 'Apply Import';
+		});
+};
+
+function setupMylarMigration() {
+	const panel = document.querySelector('#mylar-migration-panel');
+	if (!panel || feature !== 'importlists') return;
+	const rootSelect = document.querySelector('#mylar-import-root-folder');
+	const profileSelect = document.querySelector('#mylar-import-quality-profile');
+	rootSelect.innerHTML = '<option value="">Do not add volumes</option>';
+	profileSelect.innerHTML = '<option value="">Default profile</option>';
+	Promise.all([
+		fetchAPI('/rootfolder', apiKey),
+		fetchAPI('/profiles', apiKey)
+	]).then(([rootFolders, profiles]) => {
+		rootFolders.result.forEach(rootFolder => {
+			const option = document.createElement('option');
+			option.value = rootFolder.id;
+			option.innerText = rootFolder.folder;
+			rootSelect.appendChild(option);
+		});
+		profiles.result.forEach(profile => {
+			const option = document.createElement('option');
+			option.value = profile.id;
+			option.innerText = profile.name;
+			profileSelect.appendChild(option);
+		});
+	});
+	document.querySelector('#mylar-import-preview-button').onclick = previewMylarImport;
+	document.querySelector('#mylar-import-apply-button').onclick = applyMylarImport;
+	document.querySelector('#mylar-import-export').oninput = () => {
+		mylarPreview = null;
+		document.querySelector('#mylar-import-apply-button').disabled = true;
+	};
+};
+
 function saveItem(event) {
 	event.preventDefault();
 	let payload;
@@ -497,5 +638,6 @@ function setupFeatureForm() {
 usingApiKey().then(key => {
 	apiKey = key;
 	setupFeatureForm();
+	setupMylarMigration();
 	loadItems();
 });

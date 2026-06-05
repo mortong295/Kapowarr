@@ -1,6 +1,6 @@
 const wantedState = {
-	missing: {offset: 0, limit: 50, count: 0},
-	cutoff: {offset: 0, limit: 50, count: 0}
+	missing: {offset: 0, limit: 50, count: 0, total: 0},
+	cutoff: {offset: 0, limit: 50, count: 0, total: 0}
 };
 
 function wantedProfileParams() {
@@ -124,9 +124,14 @@ function addWantedArcRow(item, api_key) {
 function updatePager(kind, prefix) {
 	const state = wantedState[kind];
 	const page = Math.floor(state.offset / state.limit) + 1;
-	document.querySelector(`#${prefix}-page-label`).innerText = `Page ${page}`;
+	const pages = Math.max(1, Math.ceil(state.total / state.limit));
+	const start = state.total ? state.offset + 1 : 0;
+	const end = Math.min(state.offset + state.count, state.total);
+	document.querySelector(`#${prefix}-page-label`).innerText =
+		`Page ${page} of ${pages} (${start}-${end} of ${state.total})`;
 	document.querySelector(`#${prefix}-prev-button`).disabled = state.offset === 0;
-	document.querySelector(`#${prefix}-next-button`).disabled = state.count < state.limit;
+	document.querySelector(`#${prefix}-next-button`).disabled =
+		state.offset + state.limit >= state.total;
 };
 
 function loadMissing(api_key) {
@@ -137,7 +142,9 @@ function loadMissing(api_key) {
 		.then(json => {
 			const items = json.result.items;
 			wantedState.missing.count = items.length;
-			document.querySelector('#wanted-summary').innerText = `${items.length} missing monitored issue(s)`;
+			wantedState.missing.total = json.result.total || 0;
+			document.querySelector('#wanted-summary').innerText =
+				`${wantedState.missing.total} missing monitored issue(s)`;
 			if (!items.length)
 				document.querySelector('#wanted-empty').classList.remove('hidden');
 			else
@@ -154,7 +161,9 @@ function loadCutoffUnmet(api_key) {
 		.then(json => {
 			const items = json.result.items;
 			wantedState.cutoff.count = items.length;
-			document.querySelector('#wanted-cutoff-summary').innerText = `${items.length} cutoff-unmet issue(s)`;
+			wantedState.cutoff.total = json.result.total || 0;
+			document.querySelector('#wanted-cutoff-summary').innerText =
+				`${wantedState.cutoff.total} cutoff-unmet issue(s)`;
 			if (!items.length)
 				document.querySelector('#wanted-cutoff-empty').classList.remove('hidden');
 			else

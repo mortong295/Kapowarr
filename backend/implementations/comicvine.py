@@ -6,6 +6,7 @@ Search for volumes/issues and fetch metadata for them on ComicVine
 
 from asyncio import gather, run, sleep
 from json import JSONDecodeError
+from os import environ
 from re import IGNORECASE, compile
 from typing import Any, AsyncGenerator, Dict, Iterable, List, Sequence, Union
 
@@ -206,7 +207,11 @@ class ComicVine:
         settings = Settings().get_settings()
 
         self.date_type = settings.date_type.value
-        api_key = comicvine_api_key or settings.comicvine_api_key
+        api_key = (
+            comicvine_api_key
+            or settings.comicvine_api_key
+            or environ.get('COMICVINE_API_KEY')
+        )
         if not api_key:
             raise InvalidComicVineApiKey
 
@@ -651,16 +656,27 @@ class ComicVine:
 
     def _format_story_arc_output(
         self,
-        story_arc_data: Dict[str, Any]
+        story_arc_data: Dict[str, Any],
+        issue_details: Union[Dict[int, Dict[str, Any]], None] = None
     ) -> Dict[str, Any]:
+        issue_details = issue_details or {}
         issues = []
         for index, issue in enumerate(story_arc_data.get('issues') or [], 1):
-            volume = issue.get('volume') or {}
+            detail = issue_details.get(int(issue.get('id') or 0)) or {}
+            volume = detail.get('volume') or issue.get('volume') or {}
             issues.append({
                 'reading_order': index,
                 'series': volume.get('name') or '',
-                'issue_number': str(issue.get('issue_number') or '').strip(),
-                'title': normalise_string(issue.get('name') or ''),
+                'issue_number': str(
+                    detail.get('issue_number')
+                    or issue.get('issue_number')
+                    or ''
+                ).strip(),
+                'title': normalise_string(
+                    detail.get('name')
+                    or issue.get('name')
+                    or ''
+                ),
                 'comicvine_issue_id': issue.get('id')
             })
 
@@ -676,6 +692,29 @@ class ComicVine:
             'issues': issues
         }
 
+    async def _fetch_story_arc_issue_details(
+        self,
+        session: AsyncSession,
+        issue_ids: Iterable[Union[str, int]]
+    ) -> Dict[int, Dict[str, Any]]:
+        tasks = (
+            self.__call_api(
+                session,
+                f"/issue/{_to_full_resource_id(issue_id, '4000')}",
+                {'field_list': self.issue_field_list}
+            )
+            for issue_id in issue_ids
+        )
+        responses = await gather(*tasks, return_exceptions=True)
+        details: Dict[int, Dict[str, Any]] = {}
+        for response in responses:
+            if isinstance(response, Exception):
+                continue
+            result = response.get('results') or {}
+            if result.get('id'):
+                details[int(result['id'])] = result
+        return details
+
     async def fetch_story_arc(
         self,
         cv_id: Union[str, int]
@@ -688,7 +727,27 @@ class ComicVine:
                 f'/story_arc/{story_arc_id}',
                 {'field_list': self.story_arc_field_list}
             )
-            return self._format_story_arc_output(result['results'])
+            story_arc_data = result['results']
+            missing_volume_issue_ids = [
+                issue.get('id')
+                for issue in story_arc_data.get('issues') or []
+                if (
+                    issue.get('id')
+                    and not (issue.get('volume') or {}).get('name')
+                )
+            ]
+            issue_details = (
+                await self._fetch_story_arc_issue_details(
+                    session,
+                    missing_volume_issue_ids
+                )
+                if missing_volume_issue_ids else
+                {}
+            )
+            return self._format_story_arc_output(
+                story_arc_data,
+                issue_details
+            )
 
     async def search_story_arcs(
         self,

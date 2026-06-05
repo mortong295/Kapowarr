@@ -95,6 +95,53 @@
 				</div>
 			</form>
 		</section>
+		<section id="mylar-migration-panel" class="arr-panel arr-section-gap">
+			<div class="arr-panel-header">
+				<h2>Mylar Migration</h2>
+				<p id="mylar-import-feedback">Preview a Mylar export before applying it.</p>
+			</div>
+			<form id="mylar-import-form" class="arr-form">
+				<div class="arr-form-grid">
+					<label>
+						<span>Mylar Export JSON</span>
+						<textarea id="mylar-import-export" placeholder='{"comics":[],"pull_list":[],"story_arcs":[]}'></textarea>
+					</label>
+					<label>
+						<span>Root Folder</span>
+						<select id="mylar-import-root-folder"></select>
+					</label>
+					<label>
+						<span>Quality Profile</span>
+						<select id="mylar-import-quality-profile"></select>
+					</label>
+					<label class="arr-checkbox">
+						<input id="mylar-import-add-volumes" type="checkbox" checked>
+						<span>Add volumes with ComicVine IDs</span>
+					</label>
+					<label class="arr-checkbox">
+						<input id="mylar-import-pull-list" type="checkbox" checked>
+						<span>Import pull-list items</span>
+					</label>
+					<label class="arr-checkbox">
+						<input id="mylar-import-story-arcs" type="checkbox" checked>
+						<span>Import story arcs</span>
+					</label>
+					<label class="arr-checkbox">
+						<input id="mylar-import-monitor" type="checkbox" checked>
+						<span>Monitor imported volumes</span>
+					</label>
+					<label class="arr-checkbox">
+						<input id="mylar-import-auto-search" type="checkbox">
+						<span>Queue searches after adding volumes</span>
+					</label>
+				</div>
+				<div class="arr-form-actions">
+					<button id="mylar-import-preview-button" type="button">Preview</button>
+					<button id="mylar-import-apply-button" type="button" disabled>Apply Import</button>
+				</div>
+			</form>
+			<div id="mylar-import-result" class="arr-empty-state hidden"></div>
+		</section>
 		<section id="feature-cards" class="arr-grid arr-section-gap" aria-live="polite"></section>
 	</div>
 </main>
