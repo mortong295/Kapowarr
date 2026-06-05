@@ -168,6 +168,33 @@ class connection_events(unittest.TestCase):
         )
         self.assertIsNone(FakeSession.calls[0]['json'])
 
+    def test_emby_connection_refreshes_library_with_api_key(self):
+        save_provider('connections', {
+            'name': 'Emby',
+            'implementation': 'emby',
+            'enabled': True,
+            'settings': {
+                'url': 'https://emby.invalid',
+                'api_key': 'emby-token'
+            }
+        })
+
+        results = send_connection_event('download_imported', {
+            'title': 'Download imported',
+            'message': 'Batman imported'
+        })
+
+        self.assertTrue(results[0]['success'])
+        self.assertEqual(
+            FakeSession.calls[0]['url'],
+            'https://emby.invalid/Library/Refresh'
+        )
+        self.assertEqual(
+            FakeSession.calls[0]['headers'],
+            {'X-Emby-Token': 'emby-token'}
+        )
+        self.assertIsNone(FakeSession.calls[0]['json'])
+
 
 if __name__ == '__main__':
     unittest.main()

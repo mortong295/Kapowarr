@@ -417,7 +417,7 @@ def _system_health() -> Dict[str, Any]:
         'connections',
         'ok' if enabled_connections else 'info',
         f'{len(enabled_connections)} enabled connection(s).',
-        'Enable Plex, Jellyfin, or notification connections.'
+        'Enable Emby, Plex, Jellyfin, or notification connections.'
     )
     add_check(
         'importlists',
@@ -898,7 +898,7 @@ def _arr_feature_cards(feature: str) -> List[Dict[str, Any]]:
                 "description": "Send user-facing grab/import/failure notifications."
             },
             {
-                "name": "Plex/Jellyfin",
+                "name": "Emby/Jellyfin",
                 "status": "available",
                 "description": (
                     "Refresh library applications after Kapowarr "

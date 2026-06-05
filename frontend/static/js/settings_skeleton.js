@@ -2,7 +2,7 @@ const feature = document.querySelector('main').dataset.feature;
 const providerFeatures = ['indexers', 'connections', 'importlists'];
 const providerImplementations = {
 	indexers: ['getcomics', 'newznab', 'torznab', 'prowlarr', 'rawrss'],
-	connections: ['webhook', 'discord', 'gotify', 'plex', 'jellyfin'],
+	connections: ['webhook', 'discord', 'gotify', 'emby', 'plex', 'jellyfin'],
 	importlists: ['json', 'csv', 'pulllist', 'mylar', 'comicvine']
 };
 const providerDefaults = {
@@ -40,6 +40,10 @@ const providerDefaults = {
 		gotify: {
 			description: 'Send notifications to Gotify.',
 			settings: {base_url: '', token: '', priority: 5}
+		},
+		emby: {
+			description: 'Refresh Emby after Kapowarr events. Omit item_id for a full library refresh.',
+			settings: {base_url: '', api_key: '', item_id: ''}
 		},
 		plex: {
 			description: 'Refresh a Plex library section after Kapowarr events. Omit section_id to refresh all sections.',
@@ -107,6 +111,12 @@ const providerSchemas = {
 			{key: 'base_url', label: 'Base URL', type: 'url'},
 			{key: 'token', label: 'Token', type: 'password'},
 			{key: 'priority', label: 'Priority', type: 'number'}
+		],
+		emby: [
+			{key: 'base_url', label: 'Base URL', type: 'url'},
+			{key: 'api_key', label: 'API Key', type: 'password'},
+			{key: 'item_id', label: 'Item ID', type: 'text'},
+			{key: 'path', label: 'Library Path', type: 'text'}
 		],
 		plex: [
 			{key: 'base_url', label: 'Base URL', type: 'url'},

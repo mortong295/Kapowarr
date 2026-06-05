@@ -569,7 +569,7 @@ def test_provider(feature: str, data: Mapping[str, Any]) -> Dict[str, Any]:
             'getcomics', 'newznab', 'torznab', 'prowlarr', 'rawrss'
         },
         'connections': {
-            'webhook', 'discord', 'gotify', 'plex', 'jellyfin'
+            'webhook', 'discord', 'gotify', 'emby', 'plex', 'jellyfin'
         },
         'importlists': {
             'comicvine', 'pulllist', 'mylar', 'csv', 'json'
@@ -767,22 +767,27 @@ def _send_plex_connection(
     )
 
 
-def _send_jellyfin_connection(
+def _send_emby_family_connection(
     connection: Mapping[str, Any],
-    payload: Mapping[str, Any]
+    payload: Mapping[str, Any],
+    service_name: str
 ) -> Dict[str, Any]:
     settings = _connection_settings(connection)
     base_url = settings.get('base_url') or settings.get('url')
     token = (
         settings.get('token')
         or settings.get('api_key')
+        or settings.get('emby_api_key')
         or settings.get('jellyfin_api_key')
     )
     item_id = settings.get('item_id') or settings.get('library_id')
     if not isinstance(base_url, str) or not base_url.strip():
-        return {'success': False, 'message': 'Missing Jellyfin URL.'}
+        return {'success': False, 'message': f'Missing {service_name} URL.'}
     if not isinstance(token, str) or not token.strip():
-        return {'success': False, 'message': 'Missing Jellyfin API key.'}
+        return {
+            'success': False,
+            'message': f'Missing {service_name} API key.'
+        }
 
     endpoint = (
         f"/Items/{str(item_id).strip()}/Refresh"
@@ -796,6 +801,20 @@ def _send_jellyfin_connection(
     )
 
 
+def _send_emby_connection(
+    connection: Mapping[str, Any],
+    payload: Mapping[str, Any]
+) -> Dict[str, Any]:
+    return _send_emby_family_connection(connection, payload, 'Emby')
+
+
+def _send_jellyfin_connection(
+    connection: Mapping[str, Any],
+    payload: Mapping[str, Any]
+) -> Dict[str, Any]:
+    return _send_emby_family_connection(connection, payload, 'Jellyfin')
+
+
 def _send_connection(
     connection: Mapping[str, Any],
     payload: Mapping[str, Any]
@@ -807,6 +826,8 @@ def _send_connection(
         return _send_discord_connection(connection, payload)
     if implementation == 'gotify':
         return _send_gotify_connection(connection, payload)
+    if implementation == 'emby':
+        return _send_emby_connection(connection, payload)
     if implementation == 'plex':
         return _send_plex_connection(connection, payload)
     if implementation == 'jellyfin':
